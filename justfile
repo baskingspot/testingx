@@ -10,6 +10,22 @@ default:
 test:
     zig build test --summary all
 
+[doc("Run benchmarks (ReleaseFast); args pass to the binary: just bench --benchtime=250ms --benchmem")]
+[group("test")]
+bench *ARGS:
+    @zig build bench -- {{ ARGS }}
+
+[doc("Benchfmt end-to-end: two bench runs into files, benchstat parses and compares them")]
+[group("test")]
+bench-e2e:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp=$(mktemp -d)
+    trap 'rm -rf "${tmp}"' EXIT
+    just bench --benchmem --count=10 --benchtime=100ms > "${tmp}/run1.txt"
+    just bench --benchmem --count=10 --benchtime=100ms > "${tmp}/run2.txt"
+    benchstat "${tmp}/run1.txt" "${tmp}/run2.txt"
+
 [doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
 [group("lint")]
 lint:

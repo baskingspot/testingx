@@ -27,8 +27,9 @@
               zig
             ];
 
-            # Project-specific tools.
-            packages = with pkgs; [ ];
+            packages = with pkgs; [
+              goperf
+            ];
           };
         };
     };
