@@ -1,7 +1,5 @@
 //! Benchmarks for the benchmark filter grammar.
 
-const std = @import("std");
-
 const testingx = @import("testingx");
 
 const names = [_][]const u8{

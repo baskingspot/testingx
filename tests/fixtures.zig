@@ -77,7 +77,10 @@ test "testing.io and environ are initialized" {
 
 test "seed supplied by runner" {
     const allocator = testing.allocator;
-    const expected = testing.environ.getAlloc(allocator, "TESTINGX_EXPECT_SEED") catch |err| switch (err) {
+    const expected = testing.environ.getAlloc(
+        allocator,
+        "TESTINGX_EXPECT_SEED",
+    ) catch |err| switch (err) {
         error.EnvironmentVariableMissing => return,
         else => return err,
     };

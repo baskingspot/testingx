@@ -3,8 +3,10 @@
 //! A benchmark suite is a program that registers what runs. The entrypoint
 //! is `pub fn benchmarkMain(b: *B) !void` in the suite root:
 //!
+//!     const sort_bench = @import("bench/sort.zig");
+//!
 //!     pub fn benchmarkMain(b: *testingx.B) !void {
-//!         try b.addMod(@import("bench/sort.zig")); // bulk: every pub benchmark* at top level
+//!         try b.addMod(sort_bench); // bulk: every pub benchmark* at top level
 //!         try b.add("Parser/Baseline", benchmarkParserBaseline); // one-off
 //!     }
 //!

@@ -63,6 +63,12 @@ repo with a custom `--test_runner`).
 - The flags: `--benchtime D` or `-t Nx`, `--count/-c`, `--filter/-f`,
   `--benchmem/-m`, `--parallelism/-p`, `--no-env`, `--help`. Justfile recipes
   that pass these keep working.
+
+  Exception: filters match the registered name, which drops the `Benchmark`
+  prefix. zig-benchmark matched the printed name. An existing anchored filter
+  such as `^BenchmarkSwissSmall$` now selects nothing; drop the prefix
+  (`^SwissSmall$`). A filter that matches nothing prints only the header and
+  exits 0; the benchmark path does not have the runner's no-match failure.
 - The result rows: name, iterations, `ns/op`, `MB/s`, custom metrics. The
   printed rows keep the `Benchmark` prefix, so old captures still line up with
   new ones.
@@ -71,15 +77,18 @@ repo with a custom `--test_runner`).
 
 ### 1. The dependency
 
-In `build.zig.zon`, replace the zig-benchmark entry with testingx. Until
-testingx is published, use a path:
+In `build.zig.zon`, replace the zig-benchmark entry with testingx. For a
+local trial, use a path:
 
 ```zig
 .testingx = .{ .path = "../testingx" },
 ```
 
-Keep `.lazy = true` where it exists (stdx, compress, z53): only the `bench`
-step imports it, so test and lint builds never fetch it.
+A path works only on the machine that has the checkout; see the Gotchas for
+how it fails. To land a migration, pin a git URL at a commit that has
+`BenchOptions.imports` (step 3). Keep `.lazy = true` where it exists (stdx,
+compress, z53): only the `bench` step imports it, so test and lint builds
+never fetch it.
 
 ### 2. The import name
 
@@ -106,6 +115,9 @@ const testingx = @import("testingx"); // at the top of build.zig
 const run_bench = testingx.addBench(b, .{
     .module = testingx_module, // dep.module("testingx") or your own module
     .root_source_file = b.path("src/bench.zig"), // the suite root
+    // The suite files `@import` the package under test; the suite module is
+    // built for them, so its imports are not inherited from anywhere.
+    .imports = &.{.{ .name = "mylib", .module = lib_module }},
 });
 if (b.args) |args| run_bench.addArgs(args);
 b.step("bench", "Run benchmarks").dependOn(&run_bench.step);
@@ -132,11 +144,18 @@ registers what runs. One line per module, zero per function:
 const std = @import("std");
 const testingx = @import("testingx");
 
+const swiss = @import("swiss/bench.zig");
+const bloom = @import("bloom/bench.zig");
+
 pub fn benchmarkMain(b: *testingx.B) !void {
-    try b.addMod(@import("swiss/bench.zig"));
-    try b.addMod(@import("bloom/bench.zig"));
+    try b.addMod(swiss);
+    try b.addMod(bloom);
 }
 ```
+
+Top-level consts, not inline `@import`: ziglint has a rule against inline
+`@import` (Z028, off by default), and the const form reads better
+regardless.
 
 Rules that differ from zig-benchmark:
 
@@ -201,9 +220,12 @@ Run these in order. Each one must succeed.
 - Do not run full benchmarks in CI. Numbers from CI machines are noise. The
   smoke run (step 2) is the only benchmark-shaped thing that belongs in a
   gate.
-- testingx is not published yet. The path dependency works only for repos
-  that can reach it on disk. Do not point zon files at a git URL that does
-  not exist.
+- The testingx repo is public, so a pinned git URL is available now; pin
+  only a commit that has `BenchOptions.imports`. A path dependency is
+  local-only in a harsher way than it looks: with `../testingx` missing,
+  `lazyImport` is a build-script compile error (`dependency 'testingx' does
+  not have a build.zig`), so `zig build test` dies before any step runs.
+  `.lazy = true` does not soften that.
 
 ## Per-repo notes
 
@@ -221,9 +243,8 @@ Run these in order. Each one must succeed.
 - compress: six codec roots on one `bench` step. Either six `addBench` calls
   on one step, or one suite root that `addMod`s all six. Keep the lazy-import
   guard.
-- stdx: the barrel becomes `addMod` lines. The module-prefixed names
-  (`BenchmarkSwissSmall`) no longer need the prefix because the module carries
-  the context, but keeping the old names with `b.add` is the safer choice for
-  comparing old and new rows.
+- stdx: the barrel becomes five `addMod` lines. The printed names do not
+  change: `benchmarkSwissSmall` registers as `SwissSmall` and prints as
+  `BenchmarkSwissSmall`, so old captures line up without a `b.add` list.
 - kafka-zig and kafka-zig-snappy: toolchain bump first, then migrate the
   snappy lane. Fix the stale docstring while there.

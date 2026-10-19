@@ -4,6 +4,10 @@ pub const BenchOptions = struct {
     name: []const u8 = "bench",
     module: *std.Build.Module,
     root_source_file: std.Build.LazyPath,
+    /// Extra imports for the suite root and the files it reaches. Bench files
+    /// that `@import` the consuming package's module need it here: the suite
+    /// module is created for them, not shared with the rest of the build.
+    imports: []const std.Build.Module.Import = &.{},
     target: ?std.Build.ResolvedTarget = null,
     /// Benchmarks in Debug are noise; the default matches the Go ecosystem's
     /// expectation that benchmarks run optimized.
@@ -21,6 +25,7 @@ pub fn addBenchExe(b: *std.Build, options: BenchOptions) *std.Build.Step.Compile
         .root_source_file = options.root_source_file,
         .target = target,
         .optimize = options.optimize,
+        .imports = options.imports,
     });
     suite_module.addImport("testingx", options.module);
 

@@ -1,11 +1,11 @@
 //! The testingx self-host benchmark suite.
 
-const std = @import("std");
-
 const testingx = @import("testingx");
 
+const filter_bench = @import("filter.zig");
+
 pub fn benchmarkMain(b: *testingx.B) !void {
-    try b.addMod(@import("filter.zig"));
+    try b.addMod(filter_bench);
     try b.add("Timer/now-pair", benchmarkTimerNowPair);
 }
 
