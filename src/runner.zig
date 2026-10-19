@@ -47,7 +47,7 @@ const builtin = @import("builtin");
 
 var current_test: ?[]const u8 = null;
 var log_err_count: usize = 0;
-var run_done: std.atomic.Value(bool) = .init(false);
+var run_done: std.atomic.Value(u32) = .init(0);
 threadlocal var panicking: bool = false;
 
 /// Error logs fail tests, as they do with the built-in runner.
@@ -320,23 +320,34 @@ fn shuffleIndices(indices: []usize, seed: u32) void {
     }
 }
 
-/// Watch the run and kill it if it outlasts the timeout. The main thread sets
-/// run_done before returning, so a late wakeup is harmless.
+/// Watch the run and kill it if it outlasts the timeout. Main wakes this thread
+/// and joins it before returning, so no thread state outlives the process.
 fn watchdog(
     timeout_ns: u64,
     timeout_text: []const u8,
     fallback_name: []const u8,
 ) void {
-    // This thread is detached and can outlive main. `Init.io` is a local in the
-    // startup wrapper and is deinitialized after main returns, so sleeping on
-    // it here would be a use-after-free. The global instance has process
-    // lifetime, and this is its only user; sleep is all it is asked to do.
+    // `Init.io` is a local in the startup wrapper and is deinitialized after
+    // main returns. This thread is joined before then, but the global instance
+    // is still the right one to block on: it has process lifetime, and main
+    // wakes the futex through the same instance.
     const io_instance = Io.Threaded.global_single_threaded;
     const io = io_instance.io();
-    io.sleep(.fromNanoseconds(@intCast(timeout_ns)), .awake) catch |err| switch (err) {
-        error.Canceled => return,
-    };
-    if (run_done.load(.acquire)) return;
+    const deadline = Io.Clock.Timestamp.fromNow(io, .{
+        .raw = .{ .nanoseconds = @intCast(timeout_ns) },
+        .clock = .awake,
+    });
+
+    // The futex wakes on the done flag, the deadline, or spuriously; the
+    // timeout is not reported as an error, so both conditions are rechecked.
+    while (true) {
+        const wait = io.futexWaitTimeout(u32, &run_done.raw, 0, .{ .deadline = deadline });
+        wait catch |err| switch (err) {
+            error.Canceled => return,
+        };
+        if (run_done.load(.acquire) == 1) return;
+        if (Io.Clock.Timestamp.now(io, .awake).raw.nanoseconds >= deadline.raw.nanoseconds) break;
+    }
 
     // current_test is set while a test runs. Before the first test it is null,
     // and the run is stuck in that first test's startup, so name it.
@@ -427,17 +438,14 @@ pub fn main(init: process.Init) u8 {
         process.fatal("testingx: cannot allocate slowest list: {t}", .{err});
     @memset(ran, false);
 
+    var watchdog_thread: ?std.Thread = null;
     if (parsed.flags.timeout_ns) |timeout_ns| {
         // A single-threaded build cannot spawn the watchdog. There is no
         // timeout in that configuration, but the tests still run.
         if (comptime !builtin.single_threaded) {
             const first_name = friendlyName(builtin.test_functions[selected.items[0]].name);
             const spawn_args = .{ timeout_ns, parsed.flags.timeout_text, first_name };
-            if (std.Thread.spawn(.{}, watchdog, spawn_args)) |thread| {
-                thread.detach();
-            } else |_| {
-                // No timeout watchdog is better than no test run.
-            }
+            watchdog_thread = std.Thread.spawn(.{}, watchdog, spawn_args) catch null;
         }
     }
 
@@ -497,8 +505,14 @@ pub fn main(init: process.Init) u8 {
         if (format == .dots) print("\n", .{});
     }
 
-    // Tests are done. Stop the watchdog before printing the summary.
-    run_done.store(true, .release);
+    // Tests are done. Waking and joining the watchdog here means its thread
+    // state is released before the process exits: leak checkers see a clean
+    // process, and nothing runs after main's arena dies.
+    if (watchdog_thread) |thread| {
+        run_done.store(1, .release);
+        Io.Threaded.global_single_threaded.io().futexWake(u32, &run_done.raw, 1);
+        thread.join();
+    }
 
     const elapsed = start.untilNow(io).raw;
 
