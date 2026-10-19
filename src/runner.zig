@@ -333,8 +333,8 @@ fn watchdog(
     // wakes the futex through the same instance.
     const io_instance = Io.Threaded.global_single_threaded;
     const io = io_instance.io();
-    const deadline = Io.Clock.Timestamp.fromNow(io, .{
-        .raw = .{ .nanoseconds = @intCast(timeout_ns) },
+    const deadline: Io.Clock.Timestamp = .fromNow(io, .{
+        .raw = .fromNanoseconds(@intCast(timeout_ns)),
         .clock = .awake,
     });
 
@@ -346,7 +346,8 @@ fn watchdog(
             error.Canceled => return,
         };
         if (run_done.load(.acquire) == 1) return;
-        if (Io.Clock.Timestamp.now(io, .awake).raw.nanoseconds >= deadline.raw.nanoseconds) break;
+        const now: Io.Clock.Timestamp = .now(io, .awake);
+        if (now.compare(.gte, deadline)) break;
     }
 
     // current_test is set while a test runs. Before the first test it is null,
