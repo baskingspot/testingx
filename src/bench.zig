@@ -1122,6 +1122,8 @@ fn freeMetricKeys(allocator: Allocator, map: *MetricMap) void {
     while (it.next()) |entry| allocator.free(entry.key_ptr.*);
 }
 
+// The runner embeds its own copy (src/runner.zig) because a file cannot be
+// part of two modules. Keep the two duration grammars in sync.
 fn parseDurationNs(s: []const u8) !u64 {
     const units = [_]struct { suffix: []const u8, scale: u64 }{
         .{ .suffix = "ns", .scale = 1 },

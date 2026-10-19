@@ -3,6 +3,57 @@
 One-off working reference, 2026-10-18. Not public. Hand this file to the agent
 that migrates one repo. The repos that use zig-benchmark are: ztls, z53,
 compress, stdx, kafka-zig, kafka-zig-snappy. Exosphere has nothing to migrate.
+The runner half below also covers ztest consumers (ztls, exosphere, and any
+repo with a custom `--test_runner`).
+
+## The test runner (ztest consumers)
+
+`.test_runner` wiring is unchanged: point it at
+`testingx.path("src/runner.zig")` with `.mode = .simple`, and keep
+`run_tests.has_side_effects = true`. The changes are the flags and the names:
+
+- Environment variables become flags, passed after `zig build test --`:
+  `ZTEST_FILTER` becomes `--filter=P`, `ZTEST_FAIL_FAST` becomes `--fail-fast`,
+  `ZTEST_PLAIN` becomes `--plain`, and `ZTEST_VERBOSE` becomes
+  `--format=verbose` (`--format=testname` gives one line per test). The old
+  `--verbose` and `--no-verbose` flags are gone. `--seed=N` stays.
+- The default output is quiet without a TTY and dots on one. Quiet prints
+  nothing for a passing test, so CI logs show failures and the summary. The
+  four formats are `quiet`, `dots`, `testname`, and `verbose`; `--plain`
+  turns colors off and no longer selects a format.
+- `--timeout=D` stops a stuck run after D (`500ms`, `30s`, `10m`; default
+  `10m`; `off` or `0` disables). The message names the test that was running.
+- `--count=N` runs the whole suite N times and adds up the summary totals.
+- `--rerun-fails=N` retries failed tests up to N total attempts. A test that
+  passes on a retry is flaky: it does not fail the exit code, and the summary
+  gains `, F flaky` plus a `testingx: flaky:` line naming it. Reruns happen
+  inside each `--count` iteration.
+- `--shuffle=on|off|N` shuffles test order. `on` uses the run seed, `N` is a
+  fixed seed, and `off` keeps declaration order. The seed in the summary
+  reproduces the order for `on`.
+- `--slowest=N` prints the N slowest tests after the summary.
+- Watch mode is not a runner feature. `zig build test --watch` already exists
+  in Zig itself.
+- `--filter` now speaks the benchmark grammar, not substring: plain text
+  still means contains, `^` and `$` anchor, `*` matches any bytes, and commas
+  separate alternatives (`--filter=leak,fuzz`). An exact name is
+  `^<fully-qualified name>$`. Filters match the fully-qualified name
+  (module path plus test name).
+- A filter that matches nothing now fails the run with exit 1 ("no tests
+  matched filter"). ztest exited 0, which is why z53 pins
+  `ztest: Running 3 tests...` with a grep in its Nix check; that workaround
+  can go. A test binary with no tests at all also fails now.
+- The summary and status lines start with `testingx:` instead of `ztest:`.
+  Scripts that grep the summary line must update the prefix
+  (`grep -Eq '^testingx: [0-9]+ passed, 0 failed,'`).
+- `ZTEST_EXPECT_SEED` (used by ztest's fixture check) becomes
+  `TESTINGX_EXPECT_SEED`.
+- Pass the build's seed through so reproduction works:
+  `run_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}))`.
+- The summary line keeps its shape:
+  `testingx: N passed, M failed, K skipped (of T total) in Xms (seed: 0x...)`.
+  Flaky runs add `, F flaky` and a `testingx: flaky:` line. The status line
+  (`ALL TESTS PASSED` or `TESTS FAILED`) and the exit codes are unchanged.
 
 ## What stays the same
 

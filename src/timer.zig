@@ -1,6 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
 const testing = std.testing;
+const assert = std.debug.assert;
 
 pub const Timer = struct {
     io: Io,
@@ -23,7 +24,7 @@ pub const Timer = struct {
 test "monotonic timer reads same-second and second-boundary intervals and resets" {
     const Clock = struct {
         fn now(userdata: ?*anyopaque, clock: Io.Clock) Io.Timestamp {
-            std.debug.assert(clock == .awake);
+            assert(clock == .awake);
             const ns: *i96 = @ptrCast(@alignCast(userdata.?));
             return .{ .nanoseconds = ns.* };
         }
