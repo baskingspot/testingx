@@ -557,8 +557,8 @@ pub const B = struct {
         var ok = true;
         for (self.specs.items) |entry| {
             if (self.filter_pattern) |pattern| {
-                if (!filter.matchesAny(pattern, entry.name) and
-                    !filter.mayMatchAnyChild(pattern, entry.name)) continue;
+                if (!filterMatches(pattern, entry.name) and
+                    !filterMayMatchChild(pattern, entry.name)) continue;
             }
 
             var i: usize = 0;
@@ -627,8 +627,8 @@ pub const B = struct {
         defer if (self.name.len != 0) self.internal_allocator.free(full_name);
 
         if (self.filter_pattern) |pattern| {
-            if (!filter.matchesAny(pattern, self.name) and
-                !filter.matchesAny(pattern, full_name)) return true;
+            if (!filterMatches(pattern, self.name) and
+                !filterMatches(pattern, full_name)) return true;
         }
 
         var sub: B = undefined;
@@ -927,6 +927,25 @@ pub fn benchmark(allocator: Allocator, io: Io, func: Function, options: Options)
     };
 }
 
+/// Filters match a benchmark by the name as printed, which carries the
+/// `Benchmark` prefix, and by the registered name, which does not. Copy a name
+/// out of the output and it selects that benchmark, prefix included.
+fn filterMatches(pattern: []const u8, name: []const u8) bool {
+    if (filter.matchesAny(pattern, name)) return true;
+    var buf: [512]u8 = undefined;
+    const printed = std.fmt.bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
+    return filter.matchesAny(pattern, printed);
+}
+
+/// The same for the parent half of a sub-benchmark pattern, e.g.
+/// `^BenchmarkParent/Selected$`.
+fn filterMayMatchChild(pattern: []const u8, name: []const u8) bool {
+    if (filter.mayMatchAnyChild(pattern, name)) return true;
+    var buf: [512]u8 = undefined;
+    const printed = std.fmt.bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
+    return filter.mayMatchAnyChild(pattern, printed);
+}
+
 /// The generated bench main calls this: parse flags, run `benchmarkMain`,
 /// exit non-zero on failure.
 pub fn benchMain(comptime root: type, init: std.process.Init) u8 {
@@ -1197,6 +1216,42 @@ test "add during execution and run during registration are phase errors" {
     var fresh = B.init(testing.allocator, testing.io, .{});
     defer fresh.deinit();
     try testing.expectError(Error.InvalidPhase, fresh.run("Early", phase_suite.body));
+}
+
+test "filters accept the printed name and the registered name" {
+    const Suite = struct {
+        fn parent(b: *B) !void {
+            _ = try b.run("Selected", selected);
+            _ = try b.run("Excluded", excluded);
+        }
+        fn selected(b: *B) !void {
+            while (try b.loop()) {}
+        }
+        fn excluded(_: *B) !void {
+            return error.TestUnexpectedResult;
+        }
+    };
+
+    // Copy a name out of the output (`BenchmarkParent/Selected`) and anchor
+    // it; it selects. The registered form (`Parent/Selected`) selects too.
+    for ([_][]const u8{ "^BenchmarkParent/Selected$", "^Parent/Selected$" }) |pattern| {
+        var buffer: [4096]u8 = undefined;
+        var writer: Io.Writer = .fixed(&buffer);
+
+        var suite = B.init(testing.allocator, testing.io, .{
+            .writer = &writer,
+            .emit_environment = false,
+            .filter = pattern,
+            .benchtime = .{ .count = 3 },
+        });
+        defer suite.deinit();
+        try suite.add("Parent", Suite.parent);
+        try testing.expect(try suite.finish());
+
+        const output = writer.buffered();
+        try testing.expectEqual(@as(usize, 1), mem.count(u8, output, "BenchmarkParent/Selected"));
+        try testing.expect(!mem.containsAtLeast(u8, output, 1, "Excluded"));
+    }
 }
 
 test "registered suite runs with filter, sub-benchmarks, and memory results" {

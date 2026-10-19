@@ -64,11 +64,11 @@ repo with a custom `--test_runner`).
   `--benchmem/-m`, `--parallelism/-p`, `--no-env`, `--help`. Justfile recipes
   that pass these keep working.
 
-  Exception: filters match the registered name, which drops the `Benchmark`
-  prefix. zig-benchmark matched the printed name. An existing anchored filter
-  such as `^BenchmarkSwissSmall$` now selects nothing; drop the prefix
-  (`^SwissSmall$`). A filter that matches nothing prints only the header and
-  exits 0; the benchmark path does not have the runner's no-match failure.
+  Filters match the printed name and the registered name, so
+  `^BenchmarkSwissSmall$` and `^SwissSmall$` both select the same benchmark.
+  A filter that matches nothing prints only the header and exits 0; the
+  benchmark path does not have the runner's no-match failure.
+
 - The result rows: name, iterations, `ns/op`, `MB/s`, custom metrics. The
   printed rows keep the `Benchmark` prefix, so old captures still line up with
   new ones.
@@ -86,9 +86,22 @@ local trial, use a path:
 
 A path works only on the machine that has the checkout; see the Gotchas for
 how it fails. To land a migration, pin a git URL at a commit that has
-`BenchOptions.imports` (step 3). Keep `.lazy = true` where it exists (stdx,
-compress, z53): only the `bench` step imports it, so test and lint builds
-never fetch it.
+`BenchOptions.imports` (step 3).
+
+`.lazy = true` is not enough on its own. It stops a fetch until a build
+script asks for the package, but a consumer's build runs your build.zig,
+and that script asks on every evaluation. Then the consumer fetches the
+dependency too. Pair lazy with a guard that stops after the exported
+modules when the script runs as a dependency:
+
+```zig
+// ... declare and install the public modules, then:
+if (b.pkg_hash.len != 0) return;
+```
+
+ztls does this. stdx, compress, and z53 do not, so a consumer's build
+fetches their benchmark and test packages today. With the guard, the same
+consumer build succeeds even when the dependency is unreachable.
 
 ### 2. The import name
 
@@ -224,7 +237,7 @@ Run these in order. Each one must succeed.
   only a commit that has `BenchOptions.imports`. A path dependency is
   local-only in a harsher way than it looks: with `../testingx` missing,
   `lazyImport` is a build-script compile error (`dependency 'testingx' does
-  not have a build.zig`), so `zig build test` dies before any step runs.
+not have a build.zig`), so `zig build test` dies before any step runs.
   `.lazy = true` does not soften that.
 
 ## Per-repo notes
