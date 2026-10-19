@@ -13,6 +13,7 @@ pub const Error = bench.Error;
 pub const Options = bench.Options;
 pub const Result = bench.Result;
 pub const Spec = bench.Spec;
+pub const Function = bench.Function;
 pub const benchmark = bench.benchmark;
 pub const benchMain = bench.benchMain;
 
