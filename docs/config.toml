@@ -1,0 +1,19 @@
+# The testingx site, at baskingspot.dev/testingx/. Built with `just doc`, on
+# the baskingspot theme (baskingspot/nix, docs/README.md).
+base_url = "https://baskingspot.dev/testingx"
+theme = "baskingspot"
+title = "testingx"
+description = "A test runner and Go-style benchmarks for Zig 0.16."
+
+generate_feeds = false
+build_search_index = false
+
+[markdown.highlighting]
+# An unknown fence language is a build error, not an unhighlighted block.
+error_on_missing_language = true
+light_theme = "github-light"
+dark_theme = "github-dark"
+
+[extra]
+repo = "baskingspot/testingx"
+api = true
