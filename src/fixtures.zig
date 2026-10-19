@@ -134,19 +134,30 @@ fn decode(comptime text: []const u8, comptime encoding: Encoding) []const u8 {
 }
 
 fn buildFiles(comptime n: usize, comptime entries: [n]txtar.File) [n]Fixture {
-    // The duplicate-name check is quadratic in the section count, and real
-    // archives (ztls carries 73 sections) run past the default budget.
-    @setEvalBranchQuota(@intCast(n * n * 64 + 10_000));
-    var files: [n]Fixture = undefined;
-    for (entries, 0..) |entry, i| {
-        files[i] = .{ .name = entry.name, .text = entry.text };
-        for (files[0..i]) |prev| {
-            if (std.mem.eql(u8, prev.name, files[i].name)) {
-                @compileError("duplicate fixture name '" ++ files[i].name ++ "'");
-            }
+    // Sort the names once to find duplicates in O(n log n) instead of
+    // comparing every pair. The budget stays linear, with headroom for the
+    // log factor; the default 1000 is not enough for a large archive.
+    @setEvalBranchQuota(@intCast(10_000 + n * 512));
+
+    var names: [n][]const u8 = undefined;
+    for (entries, 0..) |entry, i| names[i] = entry.name;
+    std.mem.sortUnstable([]const u8, &names, {}, nameLessThan);
+    var i: usize = 1;
+    while (i < n) : (i += 1) {
+        if (std.mem.eql(u8, names[i - 1], names[i])) {
+            @compileError("duplicate fixture name '" ++ names[i] ++ "'");
         }
     }
+
+    var files: [n]Fixture = undefined;
+    for (entries, 0..) |entry, j| {
+        files[j] = .{ .name = entry.name, .text = entry.text };
+    }
     return files;
+}
+
+fn nameLessThan(_: void, a: []const u8, b: []const u8) bool {
+    return std.mem.order(u8, a, b) == .lt;
 }
 
 fn quota(comptime text: []const u8) u32 {
@@ -217,9 +228,9 @@ test "embedded single blob" {
 }
 
 test "a large archive builds without hitting the eval budget" {
-    // The duplicate-name check compares every section against the ones before
-    // it, so the comptime cost grows with the square of the section count. A
-    // real archive (ztls carries 73) runs past the default 1000 branches.
+    // Duplicate detection sorts the names, so the comptime cost grows as
+    // O(n log n). A real archive (ztls carries 73) runs past the default 1000
+    // branches.
     const big = comptime blk: {
         @setEvalBranchQuota(100_000);
         var text: []const u8 = "";
