@@ -9,14 +9,19 @@ repo with a custom `--test_runner`).
 ## The test runner (ztest consumers)
 
 `.test_runner` wiring is unchanged: point it at
-`testingx.path("src/runner.zig")` with `.mode = .simple`, and keep
-`run_tests.has_side_effects = true`. The changes are the flags and the names:
+`testingx.path("src/runner.zig")` with `.mode = .simple`. In simple mode the
+run step declares no outputs, so Zig reruns it on every build;
+`has_side_effects` is not needed. The changes are the flags and the names:
 
 - Environment variables become flags, passed after `zig build test --`:
   `ZTEST_FILTER` becomes `--filter=P`, `ZTEST_FAIL_FAST` becomes `--fail-fast`,
   `ZTEST_PLAIN` becomes `--plain`, and `ZTEST_VERBOSE` becomes
   `--format=verbose` (`--format=testname` gives one line per test). The old
   `--verbose` and `--no-verbose` flags are gone. `--seed=N` stays.
+- A short list of variables remains for CI policy, and a command-line flag
+  wins: `TESTINGX_FORMAT`, `TESTINGX_FILTER`, `TESTINGX_TIMEOUT`,
+  `TESTINGX_FAIL_FAST`, and `NO_COLOR`. `ZTEST_FILTER` maps to
+  `TESTINGX_FILTER` when a workflow sets it.
 - The default output is quiet without a TTY and dots on one. Quiet prints
   nothing for a passing test, so CI logs show failures and the summary. The
   four formats are `quiet`, `dots`, `testname`, and `verbose`; `--plain`

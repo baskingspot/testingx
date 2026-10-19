@@ -30,6 +30,9 @@
 //! Text output is the Go benchmark format (`benchfmt.zig`); FAIL and SKIP
 //! rows are comments so the result stream stays parseable. `--jsonl` is an
 //! opt-in machine-readable mode.
+//!
+//! Environment, for CI policy: TESTINGX_BENCH_FILTER (same as `--filter`)
+//! and TESTINGX_BENCH_JSONL (1 or true, same as `--jsonl`). Flags win.
 
 const std = @import("std");
 const mem = std.mem;
@@ -179,6 +182,47 @@ pub const SliceArgs = struct {
         return arg;
     }
 };
+
+const EnvOptions = struct {
+    filter: ?[]const u8 = null,
+    jsonl: ?[]const u8 = null,
+};
+
+/// Build the argument list from the environment and the command line. The
+/// variables come first, so a command-line flag wins. Each value becomes one
+/// `--flag=value` argument, so a filter with spaces needs no quoting.
+fn collectArgs(
+    arena: Allocator,
+    argv: []const []const u8,
+    env: EnvOptions,
+) ![]const []const u8 {
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.append(arena, argv[0]);
+    if (env.filter) |value| {
+        try args.append(arena, try std.fmt.allocPrint(arena, "--filter={s}", .{value}));
+    }
+    if (envBool(env.jsonl)) |on| {
+        if (on) try args.append(arena, "--jsonl");
+    }
+    try args.appendSlice(arena, argv[1..]);
+    return args.items;
+}
+
+/// `1`/`true` and `0`/`false`, case-insensitive. Anything else is unset.
+fn envBool(value: ?[]const u8) ?bool {
+    const text = value orelse return null;
+    if (std.ascii.eqlIgnoreCase(text, "1") or std.ascii.eqlIgnoreCase(text, "true")) return true;
+    if (std.ascii.eqlIgnoreCase(text, "0") or std.ascii.eqlIgnoreCase(text, "false")) return false;
+    return null;
+}
+
+/// A missing variable is null. Any other failure to read it is fatal.
+fn envGet(arena: Allocator, environ: std.process.Environ, key: []const u8) ?[]const u8 {
+    return std.process.Environ.getAlloc(environ, arena, key) catch |err| switch (err) {
+        error.EnvironmentVariableMissing => return null,
+        else => @panic("testingx: cannot read the environment"),
+    };
+}
 
 pub const DurationOrCount = union(enum) {
     duration_ns: u64,
@@ -443,7 +487,12 @@ pub const B = struct {
     pub fn initProcess(entry: std.process.Init) !B {
         const arena = entry.arena.allocator();
         const argv = try entry.minimal.args.toSlice(arena);
-        var args: SliceArgs = .{ .args = argv };
+        const environ = entry.minimal.environ;
+        const combined = try collectArgs(arena, argv, .{
+            .filter = envGet(arena, environ, "TESTINGX_BENCH_FILTER"),
+            .jsonl = envGet(arena, environ, "TESTINGX_BENCH_JSONL"),
+        });
+        var args: SliceArgs = .{ .args = combined };
         const options = try Options.parse(arena, &args, .{});
         return .{
             .internal_allocator = arena,
@@ -1665,4 +1714,25 @@ test "environment header is a benchfmt config block" {
     }
     try testing.expectEqualStrings(@tagName(builtin.mode), reader.config.get("mode").?);
     try testing.expectEqual(@as(?benchfmt.Record, null), try reader.next());
+}
+
+test "bench environment options come before the command line" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const argv = [_][]const u8{ "bench", "--filter=argv" };
+    const args = try collectArgs(arena, &argv, .{
+        .filter = "env pattern",
+        .jsonl = "true",
+    });
+    try testing.expectEqualStrings("bench", args[0]);
+    try testing.expectEqualStrings("--filter=env pattern", args[1]);
+    try testing.expectEqualStrings("--jsonl", args[2]);
+    try testing.expectEqualStrings("--filter=argv", args[3]);
+
+    var parsed_args: SliceArgs = .{ .args = args };
+    const options = try Options.parse(arena, &parsed_args, .{});
+    try testing.expectEqualStrings("argv", options.filter.?);
+    try testing.expect(options.jsonl);
 }

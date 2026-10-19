@@ -144,6 +144,8 @@ BenchmarkParser/Baseline	1000	244.0 ns/op
 
 `--benchtime` takes a duration or a fixed count: `--benchtime=250ms`, `--benchtime=100x`. `--filter` selects by name, with the same grammar as the test runner. `--benchmem` adds `B/op` and `allocs/op`. `--jsonl` prints one JSON object per record instead of text.
 
+Two variables exist for CI policy, and a command-line flag wins: `TESTINGX_BENCH_FILTER` is `--filter`, and `TESTINGX_BENCH_JSONL` (`1` or `true`) is `--jsonl`.
+
 Two captures compare with `benchstat`:
 
 ```sh
@@ -174,6 +176,18 @@ zig build test -- --format=testname --filter=^fixtures.test.skip demonstration$
 | `--slowest=N`          | off                            | List the N slowest tests after the summary                                     |
 | `--plain`              | off                            | No ANSI colors                                                                 |
 | `--fail-fast`          | off                            | Stop at the first failure                                                      |
+
+## Environment
+
+A few settings also come from the environment, so a shared CI workflow can change them without editing the repository. A command-line flag wins over the variable.
+
+| Variable             | Same as                                  |
+| -------------------- | ---------------------------------------- |
+| `TESTINGX_FORMAT`    | `--format`                               |
+| `TESTINGX_FILTER`    | `--filter`                               |
+| `TESTINGX_TIMEOUT`   | `--timeout`                              |
+| `TESTINGX_FAIL_FAST` | `--fail-fast` (`1` or `true`)            |
+| `NO_COLOR`           | `--plain`, when set to a non-empty value |
 
 ## Formats
 

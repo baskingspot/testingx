@@ -282,6 +282,18 @@ fn addFixtureChecks(
     const empty = addRunnerCheck(b, test_step, fixtures, 1);
     empty.addArg("--filter=no matching test");
     empty.expectStdErrMatch("no tests matched filter");
+
+    // A shared CI workflow can set the format through the environment.
+    const env_format = addRunnerCheck(b, test_step, fixtures, 0);
+    env_format.setEnvironmentVariable("TESTINGX_FORMAT", "testname");
+    env_format.addArg("--filter=basic arithmetic");
+    env_format.expectStdErrMatch("✔ basic arithmetic passes");
+
+    // A command-line flag wins over the environment.
+    const env_overridden = addRunnerCheck(b, test_step, fixtures, 0);
+    env_overridden.setEnvironmentVariable("TESTINGX_FILTER", "no matching test");
+    env_overridden.addArg("--filter=basic arithmetic");
+    env_overridden.expectStdErrMatch("1 passed, 0 failed, 0 skipped (of 1 total)");
 }
 
 fn addRunnerCheck(
@@ -292,7 +304,15 @@ fn addRunnerCheck(
 ) *std.Build.Step.Run {
     const run = b.addRunArtifact(tests);
     run.has_side_effects = true;
-    run.removeEnvironmentVariable("TESTINGX_EXPECT_SEED");
+    // Ambient runner settings must not change what these checks assert.
+    for ([_][]const u8{
+        "TESTINGX_EXPECT_SEED",
+        "TESTINGX_FORMAT",
+        "TESTINGX_FILTER",
+        "TESTINGX_TIMEOUT",
+        "TESTINGX_FAIL_FAST",
+        "NO_COLOR",
+    }) |key| run.removeEnvironmentVariable(key);
     run.expectExitCode(exit_code);
     run.expectStdOutEqual("");
     parent.dependOn(&run.step);

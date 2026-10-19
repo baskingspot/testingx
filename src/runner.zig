@@ -25,6 +25,10 @@
 //!   --plain             no colors
 //!   --fail-fast         stop at the first failure
 //!
+//! Environment, for CI policy that a shared workflow sets without editing the
+//! repository: TESTINGX_FORMAT, TESTINGX_FILTER, TESTINGX_TIMEOUT,
+//! TESTINGX_FAIL_FAST, and NO_COLOR. Command-line flags win over all of them.
+//!
 //! Filters use the benchmark grammar: plain text contains, ^ anchors start,
 //! $ anchors end, * matches any bytes, and commas separate alternatives.
 //! Reruns happen inside each --count iteration.
@@ -118,6 +122,62 @@ const Parsed = struct {
     flags: Flags = .{},
     seed: ?u32 = null,
 };
+
+const EnvOptions = struct {
+    format: ?[]const u8 = null,
+    filter: ?[]const u8 = null,
+    timeout: ?[]const u8 = null,
+    fail_fast: ?[]const u8 = null,
+    no_color: bool = false,
+};
+
+/// Build the argument list from the environment and the command line. The
+/// variables come first, so a command-line flag wins. Each value becomes one
+/// `--flag=value` argument, so a filter with spaces needs no quoting.
+fn collectArgs(
+    arena: mem.Allocator,
+    argv: []const []const u8,
+    env: EnvOptions,
+) ![]const []const u8 {
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.append(arena, argv[0]);
+    if (env.format) |value| {
+        try args.append(arena, try std.fmt.allocPrint(arena, "--format={s}", .{value}));
+    }
+    if (env.filter) |value| {
+        try args.append(arena, try std.fmt.allocPrint(arena, "--filter={s}", .{value}));
+    }
+    if (env.timeout) |value| {
+        try args.append(arena, try std.fmt.allocPrint(arena, "--timeout={s}", .{value}));
+    }
+    if (envBool(env.fail_fast)) |on| {
+        if (on) try args.append(arena, "--fail-fast");
+    }
+    if (env.no_color) try args.append(arena, "--plain");
+    try args.appendSlice(arena, argv[1..]);
+    return args.items;
+}
+
+/// `1`/`true` and `0`/`false`, case-insensitive. Anything else is unset.
+fn envBool(value: ?[]const u8) ?bool {
+    const text = value orelse return null;
+    if (ascii.eqlIgnoreCase(text, "1") or ascii.eqlIgnoreCase(text, "true")) return true;
+    if (ascii.eqlIgnoreCase(text, "0") or ascii.eqlIgnoreCase(text, "false")) return false;
+    return null;
+}
+
+/// A missing variable is null. Any other failure to read it is fatal, since
+/// the runner cannot tell policy from noise.
+fn envGet(
+    arena: mem.Allocator,
+    environ: std.process.Environ,
+    key: []const u8,
+) ?[]const u8 {
+    return std.process.Environ.getAlloc(environ, arena, key) catch |err| switch (err) {
+        error.EnvironmentVariableMissing => return null,
+        else => @panic("testingx: cannot read the environment"),
+    };
+}
 
 fn parse(argv: []const []const u8) !Parsed {
     var out: Parsed = .{};
@@ -301,7 +361,16 @@ pub fn main(init: process.Init) u8 {
     const arena = init.arena.allocator();
     const argv = init.minimal.args.toSlice(arena) catch |err|
         process.fatal("testingx: cannot read arguments: {t}", .{err});
-    const parsed = parse(argv) catch |err|
+    const environ = init.minimal.environ;
+    const args = collectArgs(arena, argv, .{
+        .format = envGet(arena, environ, "TESTINGX_FORMAT"),
+        .filter = envGet(arena, environ, "TESTINGX_FILTER"),
+        .timeout = envGet(arena, environ, "TESTINGX_TIMEOUT"),
+        .fail_fast = envGet(arena, environ, "TESTINGX_FAIL_FAST"),
+        .no_color = if (envGet(arena, environ, "NO_COLOR")) |value| value.len != 0 else false,
+    }) catch |err|
+        process.fatal("testingx: cannot build the argument list: {t}", .{err});
+    const parsed = parse(args) catch |err|
         process.fatal("testingx: cannot parse flags: {t}", .{err});
     if (parsed.seed) |seed| {
         testing.random_seed = seed;
@@ -1067,4 +1136,45 @@ test "filter matches comma-separated alternatives" {
     try testing.expect(matchesAny("leak, error log", error_log_test));
     try testing.expect(matchesAny("leak, error log", "tests.fixtures.test.memory leak detection"));
     try testing.expect(!matchesAny("leak, fuzz", error_log_test));
+}
+
+test "environment options come before the command line" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const argv = [_][]const u8{ "test", "--format=quiet", "--filter=argv" };
+    const args = try collectArgs(arena, &argv, .{
+        .format = "testname",
+        .filter = "env pattern",
+        .timeout = "30s",
+        .fail_fast = "true",
+        .no_color = true,
+    });
+
+    try testing.expectEqualStrings("test", args[0]);
+    try testing.expectEqualStrings("--format=testname", args[1]);
+    try testing.expectEqualStrings("--filter=env pattern", args[2]);
+    try testing.expectEqualStrings("--timeout=30s", args[3]);
+    try testing.expectEqualStrings("--fail-fast", args[4]);
+    try testing.expectEqualStrings("--plain", args[5]);
+    // The command line is last, so parse() lets it override the variable.
+    try testing.expectEqualStrings("--format=quiet", args[6]);
+    try testing.expectEqualStrings("--filter=argv", args[7]);
+
+    const parsed = try parse(args);
+    try testing.expectEqual(Format.quiet, parsed.flags.format.?);
+    try testing.expectEqualStrings("argv", parsed.flags.filter.?);
+    try testing.expect(parsed.flags.fail_fast);
+    try testing.expect(parsed.flags.plain);
+}
+
+test "environment booleans accept only true and false spellings" {
+    try testing.expectEqual(@as(?bool, true), envBool("1"));
+    try testing.expectEqual(@as(?bool, true), envBool("TRUE"));
+    try testing.expectEqual(@as(?bool, false), envBool("0"));
+    try testing.expectEqual(@as(?bool, false), envBool("False"));
+    try testing.expectEqual(@as(?bool, null), envBool(""));
+    try testing.expectEqual(@as(?bool, null), envBool("yes"));
+    try testing.expectEqual(@as(?bool, null), envBool(null));
 }
