@@ -5,6 +5,8 @@
 
 const std = @import("std");
 const mem = std.mem;
+const testing = std.testing;
+const Base64Decoder = std.base64.standard.Decoder;
 
 const txtar = @import("txtar.zig");
 
@@ -67,7 +69,7 @@ fn Set(comptime archive: []const u8) type {
         /// the section text without decoding.
         pub fn find(self: Self, name: []const u8) ?Fixture {
             for (self.files) |file| {
-                if (std.mem.eql(u8, file.name, name)) return file;
+                if (mem.eql(u8, file.name, name)) return file;
             }
             return null;
         }
@@ -75,7 +77,7 @@ fn Set(comptime archive: []const u8) type {
         fn section(comptime name: []const u8) Fixture {
             return comptime blk: {
                 for (data) |file| {
-                    if (std.mem.eql(u8, file.name, name)) break :blk file;
+                    if (mem.eql(u8, file.name, name)) break :blk file;
                 }
                 var message: []const u8 = "no fixture named '" ++ name ++ "'. Known names:";
                 for (data) |file| message = message ++ "\n  " ++ file.name;
@@ -110,10 +112,10 @@ fn decode(comptime text: []const u8, comptime encoding: Encoding) []const u8 {
         const stripped = clean[0..len];
         switch (encoding) {
             .base64 => {
-                const size = std.base64.standard.Decoder.calcSizeForSlice(stripped) catch
+                const size = Base64Decoder.calcSizeForSlice(stripped) catch
                     @compileError("invalid base64 fixture");
                 var out: [size]u8 = undefined;
-                _ = std.base64.standard.Decoder.decode(&out, stripped) catch
+                _ = Base64Decoder.decode(&out, stripped) catch
                     @compileError("invalid base64 fixture");
                 break :blk out;
             },
@@ -141,10 +143,10 @@ fn buildFiles(comptime n: usize, comptime entries: [n]txtar.File) [n]Fixture {
 
     var names: [n][]const u8 = undefined;
     for (entries, 0..) |entry, i| names[i] = entry.name;
-    std.mem.sortUnstable([]const u8, &names, {}, nameLessThan);
+    mem.sortUnstable([]const u8, &names, {}, nameLessThan);
     var i: usize = 1;
     while (i < n) : (i += 1) {
-        if (std.mem.eql(u8, names[i - 1], names[i])) {
+        if (mem.eql(u8, names[i - 1], names[i])) {
             @compileError("duplicate fixture name '" ++ names[i] ++ "'");
         }
     }
@@ -157,7 +159,7 @@ fn buildFiles(comptime n: usize, comptime entries: [n]txtar.File) [n]Fixture {
 }
 
 fn nameLessThan(_: void, a: []const u8, b: []const u8) bool {
-    return std.mem.order(u8, a, b) == .lt;
+    return mem.order(u8, a, b) == .lt;
 }
 
 fn quota(comptime text: []const u8) u32 {
@@ -181,46 +183,46 @@ const sample =
 
 test "sections" {
     const fx = fixtures(sample);
-    try std.testing.expectEqualStrings("fixtures for the tests\n", fx.comment);
-    try std.testing.expectEqualStrings("{\"name\":\"test\"}\n", fx.get("input.json"));
-    try std.testing.expectEqualStrings("aGVsbG8g\nYmFzZTY0\n", fx.get("cert.der"));
-    try std.testing.expectEqualSlices(u8, "hello base64", fx.b64("cert.der"));
-    try std.testing.expectEqualSlices(u8, &.{ 0, 0xff, 0x10 }, fx.hex("frame"));
-    try std.testing.expectEqualStrings(
+    try testing.expectEqualStrings("fixtures for the tests\n", fx.comment);
+    try testing.expectEqualStrings("{\"name\":\"test\"}\n", fx.get("input.json"));
+    try testing.expectEqualStrings("aGVsbG8g\nYmFzZTY0\n", fx.get("cert.der"));
+    try testing.expectEqualSlices(u8, "hello base64", fx.b64("cert.der"));
+    try testing.expectEqualSlices(u8, &.{ 0, 0xff, 0x10 }, fx.hex("frame"));
+    try testing.expectEqualStrings(
         "data:text/plain,this is not metadata\n",
         fx.get("data.txt"),
     );
-    try std.testing.expectEqual(@as(usize, 4), fx.files.len);
-    try std.testing.expect(fx.find("nope") == null);
+    try testing.expectEqual(@as(usize, 4), fx.files.len);
+    try testing.expect(fx.find("nope") == null);
 }
 
 test "a local archive binding works" {
     const fx = fixtures(sample);
     const cert = fx.b64("cert.der");
-    try std.testing.expectEqualSlices(u8, "hello base64", cert);
+    try testing.expectEqualSlices(u8, "hello base64", cert);
 }
 
 test "one embedded blob" {
     const decoded = b64("aGVs\nbG8=");
-    try std.testing.expectEqualSlices(u8, "hello", decoded);
+    try testing.expectEqualSlices(u8, "hello", decoded);
 
     const bytes = hex("00 ff\n10");
-    try std.testing.expectEqualSlices(u8, &.{ 0, 0xff, 0x10 }, bytes);
+    try testing.expectEqualSlices(u8, &.{ 0, 0xff, 0x10 }, bytes);
 }
 
 test "embedded archive" {
     const fx = fixtures(@embedFile("testdata/fixtures.txtar"));
-    try std.testing.expectEqualStrings("embedded fixture\n", fx.comment);
-    try std.testing.expectEqualSlices(u8, "embedded", fx.b64("blob"));
+    try testing.expectEqualStrings("embedded fixture\n", fx.comment);
+    try testing.expectEqualSlices(u8, "embedded", fx.b64("blob"));
 }
 
 test "embedded single blob" {
-    try std.testing.expectEqualSlices(
+    try testing.expectEqualSlices(
         u8,
         "embedded",
         b64(@embedFile("testdata/blob.b64")),
     );
-    try std.testing.expectEqualSlices(
+    try testing.expectEqualSlices(
         u8,
         &.{ 0, 0xff, 0x10 },
         hex(@embedFile("testdata/blob.hex")),
@@ -240,6 +242,6 @@ test "a large archive builds without hitting the eval budget" {
         break :blk text;
     };
     const fx = fixtures(big);
-    try std.testing.expectEqual(@as(usize, 100), fx.files.len);
-    try std.testing.expectEqualStrings("00\n", fx.get("section99"));
+    try testing.expectEqual(@as(usize, 100), fx.files.len);
+    try testing.expectEqualStrings("00\n", fx.get("section99"));
 }
