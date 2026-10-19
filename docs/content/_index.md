@@ -37,11 +37,12 @@ const tests = b.addTest(.{
     .test_runner = .{ .path = testingx.path("src/runner.zig"), .mode = .simple },
 });
 const run_tests = b.addRunArtifact(tests);
-run_tests.has_side_effects = true; // always run tests, don't cache
 run_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}));
 ```
 
 `mode = .simple` is what skips the binary protocol the built-in runner uses. That protocol is also why writing to stdout in a test could deadlock; with the simple mode, it cannot.
+
+The simple mode also means the run step declares no outputs, so Zig treats it as side-effecting and runs it on every build. `has_side_effects` is not needed here. It matters for the built-in runner's step, which is cacheable: with a fixed seed, an unchanged build can skip the run.
 
 The runner file stays in the dependency. Do not import it from your code: a `test_runner` source compiles as its own module, and a file cannot belong to two modules.
 
@@ -287,14 +288,34 @@ Mark the dependency lazy in `build.zig.zon`:
 .testingx = .{ .url = "git+https://github.com/baskingspot/testingx#<commit>", .hash = "...", .lazy = true },
 ```
 
-Then stop the build script after it declares the public modules when it runs as a dependency:
+Then put a guard between the part of the build that ships and the part that exists to develop it:
 
 ```zig
-// Declare and install the public modules above this line.
-if (b.pkg_hash.len != 0) return;
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+
+    const lib_mod = b.addModule("mylib", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+    });
+    b.installArtifact(b.addLibrary(.{
+        .name = "mylib",
+        .root_module = lib_mod,
+        .linkage = .static,
+    }));
+
+    // Everything below is for this repo only: tests, benchmarks, and the
+    // tools they need. Consumers of the package never reach it.
+    if (b.pkg_hash.len != 0) return;
+
+    const testingx = b.dependency("testingx", .{ .target = target });
+    // ... test and bench steps
+}
 ```
 
-`b.pkg_hash` is non-empty when the script runs for someone else's build. The early return keeps the whole development graph out of their fetch: no runner, no benchmarks, no test step. When you build your own repo, the hash is empty and the rest runs.
+`b.pkg_hash` is empty when the script runs as the root package and non-empty when it runs as someone else's dependency. The early return keeps the development graph out of their build: no runner, no benchmarks, no test step.
+
+The guard is a boundary marker, not a header line. Put it after the last declaration a consumer needs. Too early and consumers lose a module or an installed artifact, with an error about a missing module. Too late and the dev dependencies stay on their fetch path. A library with no test or bench steps has nothing to guard, so it does not need the line at all.
 
 Lazy alone is not enough. A consumer's build runs your `build.zig`, and if the script asks for the dependency on every evaluation, their build fetches it. The guard is what stops that.
 
