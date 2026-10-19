@@ -9,7 +9,9 @@ const mem = std.mem;
 const txtar = @import("txtar.zig");
 
 pub const Fixture = struct {
+    /// The marker name.
     name: []const u8,
+    /// The section text, without decoding.
     text: []const u8,
 };
 
@@ -19,6 +21,13 @@ pub const Fixture = struct {
 /// holds the comment and the section list; the decoded bytes live in
 /// compile-time constants on the generated type. A local
 /// `const fx = fixtures(@embedFile(...))` works.
+///
+/// The value has:
+/// - `comment`: the archive comment.
+/// - `files`: every section, as `Fixture { name, text }`.
+/// - `get(name)`: the section text.
+/// - `b64(name)` and `hex(name)`: decoded bytes.
+/// - `find(name)`: runtime lookup, returning a `Fixture`.
 pub fn fixtures(comptime archive: []const u8) Set(archive) {
     const T = Set(archive);
     return .{ .comment = T.parsed.comment, .files = &T.data };

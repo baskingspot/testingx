@@ -5,9 +5,9 @@
   </picture>
 </h1>
 
-A plain-text test runner and Go-style benchmarks for Zig 0.16.
+A plain-text test runner, Go-style benchmarks, and compile-time test fixtures for Zig 0.16.
 
-Zig's built-in test runner draws a progress display and speaks a binary protocol to the build runner, which is why output piped to a file is unreadable and why writing to stdout in a test can deadlock. testingx replaces it with plain text on stderr. The benchmark half follows Go's `testing.B` and prints the Go benchmark format, so `benchstat` compares two runs with no glue. One dependency, no dependencies of its own, Zig 0.16 only.
+Zig's built-in test runner draws a progress display and speaks a binary protocol to the build runner, which is why output piped to a file is unreadable and why writing to stdout in a test can deadlock. testingx replaces it with plain text on stderr. The benchmark half follows Go's `testing.B` and prints the Go benchmark format, so `benchstat` compares two runs with no glue. The fixture helpers keep binary test data as base64 or hex text and organize fixtures in txtar archives, all read at compile time. One dependency, no dependencies of its own, Zig 0.16 only.
 
 ## What is in it
 
@@ -15,6 +15,7 @@ Zig's built-in test runner draws a progress display and speaks a binary protocol
 - [Getting started with benchmarks](https://baskingspot.dev/testingx/#getting-started-with-benchmarks): a suite is a file with `pub fn benchmarkMain(b: *testingx.B) !void`. `addBench` builds it as a ReleaseFast executable.
 - [Test runner flags](https://baskingspot.dev/testingx/#test-runner-flags): `--format`, `--filter`, `--timeout`, `--count`, `--rerun-fails`, `--shuffle`, and `--slowest`. A wrong filter fails instead of passing silently.
 - [Writing benchmarks](https://baskingspot.dev/testingx/#writing-benchmarks): `b.loop()`, `defer b.keepAlive(sink)`, `b.setBytes`, `b.reportMetric`, and `b.run` for sub-benchmarks. Names use benchfmt parts, so benchstat groups a matrix.
+- [Embedded fixtures](https://baskingspot.dev/testingx/#embedded-fixtures): `testingx.b64` and `testingx.hex` decode one embedded file, and `testingx.fixtures` reads a txtar archive by name at compile time.
 - [For library authors](https://baskingspot.dev/testingx/#for-library-authors): `.lazy = true` plus `if (b.pkg_hash.len != 0) return;` keeps the runner and benchmarks out of a consumer's build.
 - [Limits](https://baskingspot.dev/testingx/#limits): what the compiler does not allow, such as parallel tests and subtests.
 
@@ -49,7 +50,7 @@ testingx builds with Zig 0.16 only.
 
 ## Documentation
 
-- The [guide](https://baskingspot.dev/testingx/) covers adoption, flags, benchmark authoring, and the library-author setup, with examples that compile.
+- The [guide](https://baskingspot.dev/testingx/) covers adoption, flags, benchmark authoring, fixtures, and the library-author setup, with examples that compile.
 - The [API reference](https://baskingspot.dev/testingx/api/) documents every symbol.
 
 ## Work on it

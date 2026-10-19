@@ -2,11 +2,11 @@
 title = "testingx"
 +++
 
-A test runner that replaces the built-in one, and benchmarks that sit beside your tests.
+A test runner that replaces the built-in one, benchmarks that sit beside your tests, and fixtures that stay text in the repo and become bytes at compile time.
 
-The test runner writes plain text to stderr. A terminal gets colored dots; a pipe or a CI log gets one line per failure and nothing for passes, which is what `go test` prints. The benchmark side follows Go's `testing.B`: a benchmark is a function that loops, and the output is the Go benchmark format, so `benchstat` compares two runs without any glue.
+The test runner writes plain text to stderr. A terminal gets colored dots; a pipe or a CI log gets one line per failure and nothing for passes, which is what `go test` prints. The benchmark side follows Go's `testing.B`: a benchmark is a function that loops, and the output is the Go benchmark format, so `benchstat` compares two runs without any glue. The fixture side reads `@embedFile` bytes: base64 and hex blobs decode at comptime, and a txtar archive becomes a name-indexed set of sections.
 
-Both halves are one dependency and need Zig 0.16.
+All of it is one dependency and needs Zig 0.16.
 
 - [Getting started with the runner](#getting-started-with-the-runner): wire it into `build.zig`, then read the output.
 - [Getting started with benchmarks](#getting-started-with-benchmarks): write a suite, wire the executable, compare two runs.
@@ -326,7 +326,9 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCO0v0Z...
 
 `get` returns the section text as txtar stores it. A non-empty section ends with a newline. `b64` and `hex` ignore whitespace and decode at comptime, so wrapped base64 works.
 
-The value is the archive, and its type is generated from the embedded bytes. `files` and the decoders resolve to compile-time constants, so there is no parse at startup and no allocator. `fx.files` lists every section in archive order, and `fx.find(name)` looks one up at runtime when the name is not a literal. A name that is not in the archive is a compile error in `get`, `b64`, and `hex`. So is a duplicate marker name.
+The value is the archive, and its type is generated from the embedded bytes. `files` is `[]const Fixture`, where each entry is `{ name, text }`. `comment` is the archive comment. The decoders resolve to compile-time constants, so there is no parse at startup and no allocator. `fx.files` lists every section in archive order, and `fx.find(name)` returns a `Fixture` at runtime when the name is not a literal. A name that is not in the archive is a compile error in `get`, `b64`, and `hex`. So is a duplicate marker name.
+
+The decoders take a comptime name. A runtime loop can use `find` to read raw section text, but it cannot decode a section whose name is only known at runtime.
 
 `@embedFile` resolves a path relative to the source file that contains it. The helpers take the embedded bytes rather than a path, so the `@embedFile(...)` call stays in your file. There is no runtime file access.
 
