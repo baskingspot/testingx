@@ -4,7 +4,7 @@ Working notes for AI coding agents in baskingspot/testingx.
 
 ## What this is
 
-A test runner that replaces the built-in one, and benchmarks that sit beside your tests. Both halves are one dependency. The project is incubating: unstable, with no promises about its API.
+A test runner that replaces the built-in one, and benchmarks that sit beside your tests. Both halves are one dependency.
 
 ## Layout
 
