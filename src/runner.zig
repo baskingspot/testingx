@@ -40,12 +40,14 @@ const process = std.process;
 const Io = std.Io;
 const ascii = std.ascii;
 const mem = std.mem;
+const time = std.time;
 const print = debug.print;
+const Allocator = mem.Allocator;
 const builtin = @import("builtin");
 
 var current_test: ?[]const u8 = null;
 var log_err_count: usize = 0;
-var run_done = std.atomic.Value(bool).init(false);
+var run_done: std.atomic.Value(bool) = .init(false);
 threadlocal var panicking: bool = false;
 
 /// Error logs fail tests, as they do with the built-in runner.
@@ -93,8 +95,6 @@ pub const panic = debug.FullPanic(struct {
     }
 }.panicFn);
 
-// -- Flags -------------------------------------------------------------------
-
 const Format = enum { quiet, dots, testname, verbose };
 
 const Shuffle = union(enum) {
@@ -109,7 +109,7 @@ const Flags = struct {
     fail_fast: bool = false,
     filter: ?[]const u8 = null,
     /// Nanoseconds. Null disables the watchdog.
-    timeout_ns: ?u64 = 10 * std.time.ns_per_min,
+    timeout_ns: ?u64 = 10 * time.ns_per_min,
     timeout_text: []const u8 = "10m",
     count: usize = 1,
     /// Total attempts allowed for a failed test. 1 means no reruns.
@@ -135,7 +135,7 @@ const EnvOptions = struct {
 /// variables come first, so a command-line flag wins. Each value becomes one
 /// `--flag=value` argument, so a filter with spaces needs no quoting.
 fn collectArgs(
-    arena: mem.Allocator,
+    arena: Allocator,
     argv: []const []const u8,
     env: EnvOptions,
 ) ![]const []const u8 {
@@ -169,11 +169,11 @@ fn envBool(value: ?[]const u8) ?bool {
 /// A missing variable is null. Any other failure to read it is fatal, since
 /// the runner cannot tell policy from noise.
 fn envGet(
-    arena: mem.Allocator,
+    arena: Allocator,
     environ: std.process.Environ,
     key: []const u8,
 ) ?[]const u8 {
-    return std.process.Environ.getAlloc(environ, arena, key) catch |err| switch (err) {
+    return environ.getAlloc(arena, key) catch |err| switch (err) {
         error.EnvironmentVariableMissing => return null,
         else => @panic("testingx: cannot read the environment"),
     };
@@ -260,8 +260,6 @@ fn parseTimeout(value: []const u8) !?u64 {
     const ns = parseDurationNs(value) catch return error.InvalidTimeout;
     return if (ns == 0) null else ns;
 }
-
-// -- Duration parsing --------------------------------------------------------
 //
 // The benchmark side parses durations in src/bench.zig (parseDurationNs).
 // The runner cannot import that file: a test_runner source compiles as its own
@@ -299,23 +297,20 @@ fn parseDurationNs(s: []const u8) error{InvalidDuration}!u64 {
 fn durationUnitScale(unit: []const u8) ?f64 {
     if (mem.eql(u8, unit, "ns")) return 1;
     if (mem.eql(u8, unit, "us") or mem.eql(u8, unit, "µs")) {
-        return @floatFromInt(std.time.ns_per_us);
+        return @floatFromInt(time.ns_per_us);
     }
-    if (mem.eql(u8, unit, "ms")) return @floatFromInt(std.time.ns_per_ms);
-    if (mem.eql(u8, unit, "s")) return @floatFromInt(std.time.ns_per_s);
-    if (mem.eql(u8, unit, "m")) return @floatFromInt(std.time.ns_per_min);
-    if (mem.eql(u8, unit, "h")) return @floatFromInt(std.time.ns_per_hour);
+    if (mem.eql(u8, unit, "ms")) return @floatFromInt(time.ns_per_ms);
+    if (mem.eql(u8, unit, "s")) return @floatFromInt(time.ns_per_s);
+    if (mem.eql(u8, unit, "m")) return @floatFromInt(time.ns_per_min);
+    if (mem.eql(u8, unit, "h")) return @floatFromInt(time.ns_per_hour);
     return null;
 }
-
-// -- Shuffle -----------------------------------------------------------------
-//
 // Fisher-Yates with a deterministic PRNG, so the same seed always produces the
 // same order. std.Random is part of the standard library, not a repo module,
 // so the runner is still self-contained.
 
 fn shuffleIndices(indices: []usize, seed: u32) void {
-    var prng = std.Random.DefaultPrng.init(seed);
+    var prng: std.Random.DefaultPrng = .init(seed);
     const random = prng.random();
     var i = indices.len;
     while (i > 1) {
@@ -325,8 +320,6 @@ fn shuffleIndices(indices: []usize, seed: u32) void {
     }
 }
 
-// -- Main --------------------------------------------------------------------
-
 /// Watch the run and kill it if it outlasts the timeout. The main thread sets
 /// run_done before returning, so a late wakeup is harmless.
 fn watchdog(
@@ -334,7 +327,12 @@ fn watchdog(
     timeout_text: []const u8,
     fallback_name: []const u8,
 ) void {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    // This thread is detached and can outlive main. `Init.io` is a local in the
+    // startup wrapper and is deinitialized after main returns, so sleeping on
+    // it here would be a use-after-free. The global instance has process
+    // lifetime, and this is its only user; sleep is all it is asked to do.
+    const io_instance = Io.Threaded.global_single_threaded;
+    const io = io_instance.io();
     io.sleep(.fromNanoseconds(@intCast(timeout_ns)), .awake) catch |err| switch (err) {
         error.Canceled => return,
     };
@@ -562,7 +560,7 @@ const Attempts = struct {
 
 const RunOptions = struct {
     io: Io,
-    arena: mem.Allocator,
+    arena: Allocator,
     minimal: process.Init.Minimal,
     format: Format,
     plain: bool,
@@ -643,14 +641,12 @@ fn failureLike(result: RunResult) bool {
     return result.outcome == .fail or result.log_errs != 0 or result.leaked;
 }
 
-fn captureTrace(arena: mem.Allocator, trace: *const std.builtin.StackTrace) ?[]const u8 {
+fn captureTrace(arena: Allocator, trace: *const std.builtin.StackTrace) ?[]const u8 {
     var buffer: Io.Writer.Allocating = .init(arena);
     const terminal: Io.Terminal = .{ .writer = &buffer.writer, .mode = .no_color };
     debug.writeErrorReturnTrace(trace, terminal) catch return null;
     return buffer.written();
 }
-
-// -- Output ------------------------------------------------------------------
 
 const Status = enum { pass, fail, skip, leak };
 
@@ -762,10 +758,8 @@ fn printIndented(text: []const u8) void {
 }
 
 fn elapsedMs(elapsed: Io.Duration) f64 {
-    return @as(f64, @floatFromInt(elapsed.nanoseconds)) / std.time.ns_per_ms;
+    return @as(f64, @floatFromInt(elapsed.nanoseconds)) / time.ns_per_ms;
 }
-
-// -- Slowest -----------------------------------------------------------------
 
 const Slowest = struct {
     test_idx: usize,
@@ -773,7 +767,7 @@ const Slowest = struct {
 };
 
 fn printSlowest(
-    arena: mem.Allocator,
+    arena: Allocator,
     selected: []const usize,
     slowest_ns: []const u64,
     ran: []const bool,
@@ -796,14 +790,12 @@ fn printSlowest(
     if (count == 0) return;
     print("testingx: slowest {d} test{s}:\n", .{ count, if (count != 1) "s" else "" });
     for (entries.items[0..count]) |entry| {
-        const ms = @as(f64, @floatFromInt(entry.ns)) / std.time.ns_per_ms;
+        const ms = @as(f64, @floatFromInt(entry.ns)) / time.ns_per_ms;
         print("{d:.2}ms  {s}\n", .{
             ms, friendlyName(builtin.test_functions[entry.test_idx].name),
         });
     }
 }
-
-// -- Filter grammar ----------------------------------------------------------
 //
 // The same grammar as src/filter.zig (the benchmark filter): plain text
 // contains, ^ anchors start, $ anchors end, * any bytes, commas separate
@@ -889,8 +881,6 @@ fn globMatch(pattern: []const u8, text: []const u8) bool {
     return pattern_index == pattern.len;
 }
 
-// -- Test name formatting ----------------------------------------------------
-
 /// Extract a human-friendly test name from the fully-qualified builtin name.
 /// Named tests:   "myapp.parser.test.parseJson" -> "parseJson"
 ///                "myapp.parser.test.test_42"   -> "test_42"
@@ -912,13 +902,11 @@ fn friendlyName(name: []const u8) []const u8 {
     // Keep the full qualified name since there's no meaningful short name.
     return name;
 }
-
-// -- Fuzz support ------------------------------------------------------------
 //
-// std.testing.fuzz calls the root module's fuzz function.
+// testing.fuzz calls the root module's fuzz function.
 // The main function rejects fuzz mode because it needs the server protocol.
 
-// std.testing.fuzz requires this parameter order.
+// testing.fuzz requires this parameter order.
 pub fn fuzz(
     context: anytype,
     comptime testOne: fn (@TypeOf(context), *testing.Smith) anyerror!void, // ziglint-ignore: Z023
@@ -934,8 +922,6 @@ pub fn fuzz(
     var smith: testing.Smith = .{ .in = "" };
     try testOne(context, &smith);
 }
-
-// -- Self-tests --------------------------------------------------------------
 
 test "friendlyName strips module path for named tests" {
     try testing.expectEqualStrings("parseJson", friendlyName("myapp.parser.test.parseJson"));
@@ -982,7 +968,7 @@ test "flags parse equals and separated forms" {
     try testing.expectEqual(@as(usize, 2), parsed.flags.count);
     try testing.expectEqual(@as(usize, 3), parsed.flags.rerun_fails);
     try testing.expectEqual(@as(usize, 4), parsed.flags.slowest);
-    try testing.expectEqual(@as(?u64, 30 * std.time.ns_per_s), parsed.flags.timeout_ns);
+    try testing.expectEqual(@as(?u64, 30 * time.ns_per_s), parsed.flags.timeout_ns);
 
     const separated = try parse(&[_][]const u8{
         "test",      "--format", "quiet",     "--filter", "fuzz",      "--count", "3",
@@ -993,7 +979,7 @@ test "flags parse equals and separated forms" {
     try testing.expectEqual(@as(usize, 3), separated.flags.count);
     try testing.expectEqual(Shuffle.on, separated.flags.shuffle);
     try testing.expectEqual(@as(usize, 2), separated.flags.slowest);
-    try testing.expectEqual(@as(?u64, 500 * std.time.ns_per_ms), separated.flags.timeout_ns);
+    try testing.expectEqual(@as(?u64, 500 * time.ns_per_ms), separated.flags.timeout_ns);
 }
 
 test "flags parse every format value" {
@@ -1019,13 +1005,13 @@ test "flags parse every format value" {
 
 test "flags parse timeout durations and off" {
     const defaults = try parse(&[_][]const u8{"test"});
-    try testing.expectEqual(@as(?u64, 10 * std.time.ns_per_min), defaults.flags.timeout_ns);
+    try testing.expectEqual(@as(?u64, 10 * time.ns_per_min), defaults.flags.timeout_ns);
     try testing.expectEqualStrings("10m", defaults.flags.timeout_text);
 
-    try testing.expectEqual(@as(?u64, 500 * std.time.ns_per_ms), (try parse(&[_][]const u8{
+    try testing.expectEqual(@as(?u64, 500 * time.ns_per_ms), (try parse(&[_][]const u8{
         "test", "--timeout=500ms",
     })).flags.timeout_ns);
-    try testing.expectEqual(@as(?u64, 90 * std.time.ns_per_s), (try parse(&[_][]const u8{
+    try testing.expectEqual(@as(?u64, 90 * time.ns_per_s), (try parse(&[_][]const u8{
         "test", "--timeout=1m30s",
     })).flags.timeout_ns);
     try testing.expectEqual(@as(?u64, null), (try parse(&[_][]const u8{
@@ -1096,9 +1082,9 @@ test "flags reject unknown options, removed options, and missing values" {
 }
 
 test "duration parser accepts go-style durations" {
-    try testing.expectEqual(@as(u64, 500 * std.time.ns_per_ms), try parseDurationNs("500ms"));
-    try testing.expectEqual(@as(u64, 1500 * std.time.ns_per_ms), try parseDurationNs("1.5s"));
-    try testing.expectEqual(@as(u64, 90 * std.time.ns_per_s), try parseDurationNs("1m30s"));
+    try testing.expectEqual(@as(u64, 500 * time.ns_per_ms), try parseDurationNs("500ms"));
+    try testing.expectEqual(@as(u64, 1500 * time.ns_per_ms), try parseDurationNs("1.5s"));
+    try testing.expectEqual(@as(u64, 90 * time.ns_per_s), try parseDurationNs("1m30s"));
     try testing.expectEqual(@as(u64, 0), try parseDurationNs("0"));
     try testing.expectError(error.InvalidDuration, parseDurationNs(""));
     try testing.expectError(error.InvalidDuration, parseDurationNs("10"));

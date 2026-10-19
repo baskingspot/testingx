@@ -402,8 +402,6 @@ fn prettyValue(writer: *Io.Writer, x: f64, unit: []const u8) !void {
     return writer.print("{d:>18.7} {s}", .{ x, unit });
 }
 
-// -- tests ------------------------------------------------------------------
-
 const spec_example =
     \\commit: 7cd9055
     \\commit-time: 2016-02-11T13:25:45-0500

@@ -43,6 +43,7 @@ const atomic = std.atomic;
 const Thread = std.Thread;
 const testing = std.testing;
 const doNotOptimizeAway = mem.doNotOptimizeAway;
+const Alignment = mem.Alignment;
 const builtin = @import("builtin");
 
 const benchfmt = @import("benchfmt.zig");
@@ -364,7 +365,7 @@ pub const CountingAllocator = struct {
         if (new_len > old_len) _ = self.total_bytes.fetchAdd(@intCast(new_len - old_len), .seq_cst);
     }
 
-    fn rawAlloc(ctx: *anyopaque, len: usize, alignment: mem.Alignment, ret_addr: usize) ?[*]u8 {
+    fn rawAlloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
         const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
         const ptr = self.child.rawAlloc(len, alignment, ret_addr) orelse return null;
         self.record(len);
@@ -374,7 +375,7 @@ pub const CountingAllocator = struct {
     fn rawResize(
         ctx: *anyopaque,
         memory: []u8,
-        alignment: mem.Alignment,
+        alignment: Alignment,
         new_len: usize,
         ret_addr: usize,
     ) bool {
@@ -387,7 +388,7 @@ pub const CountingAllocator = struct {
     fn rawRemap(
         ctx: *anyopaque,
         memory: []u8,
-        alignment: mem.Alignment,
+        alignment: Alignment,
         new_len: usize,
         ret_addr: usize,
     ) ?[*]u8 {
@@ -397,7 +398,7 @@ pub const CountingAllocator = struct {
         return ptr;
     }
 
-    fn rawFree(ctx: *anyopaque, memory: []u8, alignment: mem.Alignment, ret_addr: usize) void {
+    fn rawFree(ctx: *anyopaque, memory: []u8, alignment: Alignment, ret_addr: usize) void {
         const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
         self.child.rawFree(memory, alignment, ret_addr);
     }
@@ -413,10 +414,9 @@ pub const CountingAllocator = struct {
 /// A `B` is the suite during registration (`benchmarkMain`) and one running
 /// benchmark during execution. The phase decides what `add`/`addMod`/`run` do.
 pub const B = struct {
-    // --- suite context (registration phase) ---
     internal_allocator: Allocator,
     /// The I/O of this B. In the suite phase it is the process I/O; in a
-    /// spawned benchmark it is `io_instance.io()` (mirrors `std.testing.io`:
+    /// spawned benchmark it is `io_instance.io()` (mirrors `testing.io`:
     /// a fresh `Io.Threaded` per benchmark, on the same counting allocator
     /// as `allocator`, so its allocations are counted).
     io: Io,
@@ -429,8 +429,6 @@ pub const B = struct {
     stdout_buf: [4096]u8 = undefined,
     stdout: Io.File.Writer = undefined,
     executing: bool = false,
-
-    // --- benchmark context (execution phase) ---
     allocator: Allocator = undefined,
     counting_allocator: CountingAllocator = undefined,
     name: []const u8 = "",
@@ -527,8 +525,6 @@ pub const B = struct {
         }
         return self.writer.?;
     }
-
-    // -- registration -------------------------------------------------------
 
     /// Register one benchmark by name.
     pub fn add(self: *B, name: []const u8, func: Function) !void {
@@ -633,7 +629,7 @@ pub const B = struct {
     /// Spawn one running benchmark into `dest`, in place. `io` and
     /// `allocator` point into `dest`'s own `io_instance` and
     /// `counting_allocator`, so a spawned B must never be copied, the same
-    /// contract `std.testing.io` has.
+    /// contract `testing.io` has.
     fn spawn(self: *const B, dest: *B, name: []const u8, func: Function) !void {
         dest.* = .{
             .internal_allocator = self.internal_allocator,
@@ -660,8 +656,6 @@ pub const B = struct {
         dest.io = dest.io_instance.io();
         dest.timer = .start(dest.io);
     }
-
-    // -- sub-benchmarks -----------------------------------------------------
 
     /// Execute a sub-benchmark (Go's `b.Run`). Only valid inside a running
     /// benchmark: `benchmarkMain` registers with `add`/`addMod` instead.
@@ -690,8 +684,6 @@ pub const B = struct {
         if (sub.failed) self.failed = true;
         return !sub.failed;
     }
-
-    // -- running ------------------------------------------------------------
 
     pub fn startTimer(self: *B) void {
         if (!self.timer_on) {
@@ -1214,8 +1206,6 @@ fn parseDurationNs(s: []const u8) !u64 {
     }
     return error.InvalidDuration;
 }
-
-// -- tests ------------------------------------------------------------------
 
 test "benchmarkName strips either prefix and keeps other names" {
     try testing.expectEqualStrings("Sort", comptime B.benchmarkName("benchmarkSort"));
