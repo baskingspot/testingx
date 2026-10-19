@@ -1,6 +1,6 @@
 .{
     .name = .testingx,
-    .version = "0.0.0",
+    .version = "0.1.0",
     .fingerprint = 0x655740ecfb79bf89, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
    .dependencies = .{
