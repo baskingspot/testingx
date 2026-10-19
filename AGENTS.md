@@ -11,6 +11,7 @@ A test runner that replaces the built-in one, and benchmarks that sit beside you
 - `src/runner.zig` is the test runner, referenced as a `.test_runner` path. It compiles as its own module and cannot import any other file in this repo, so anything it needs is copied into it. The filter grammar is copied from `src/filter.zig`, and the fixture checks in `build.zig` pin both copies.
 - `src/bench.zig` is the benchmark engine: registration (`add`, `addMod`), execution (`finish`), and sub-benchmarks (`run`). A spawned `B` is filled in place and owns a by-value `Io.Threaded` and `CountingAllocator`. Never copy a spawned `B`.
 - `src/benchfmt.zig` is the Go benchmark format codec. Text output is the contract. A result line must start with `Benchmark`, which is format grammar: the writer adds it and the reader strips it. JSONL uses the registered names without the prefix. FAIL and SKIP are comments in text mode.
+- `src/fixtures.zig` reads embedded test data: `fixtures(@embedFile(...))` returns a comptime archive value with `get`, `b64`, `hex`, `files`, and `find`, and `b64`/`hex` decode a single embedded blob. `src/txtar.zig` is the comptime-only parser behind it. It follows mattrobenolt/txtar's marker rules and reads only; it never formats.
 - `src/root.zig` is the public surface. It also holds a test block that forces every module's tests to be analyzed. Without it, `zig build test` compiles the modules and runs zero tests.
 - `src/bench_main.zig`, with `addBench` and `addBenchExe` in `build.zig`, builds a suite into a ReleaseFast executable.
 - `benchmarks/` is the self-host suite. `tests/` holds runner fixtures with intentional failures, a panic, a timeout, and a flaky test.
@@ -43,6 +44,7 @@ Change these only together with the fixture checks in `build.zig`, which assert 
 - Do not add `has_side_effects` to test runs. In `.mode = .simple` the step declares no outputs, and Zig already reruns it.
 - Environment variables set a default and flags win: `TESTINGX_FORMAT`, `TESTINGX_FILTER`, `TESTINGX_TIMEOUT`, `TESTINGX_FAIL_FAST`, `NO_COLOR`, plus `TESTINGX_BENCH_FILTER` and `TESTINGX_BENCH_JSONL` for benchmarks. The fixture checks strip them from the ambient environment.
 - The docs build is part of `just ci` and fails on an unlabeled code fence.
+- `@embedFile` resolves a path against the file that contains the builtin, not the caller of an inline function. The fixture helpers take embedded bytes for that reason; do not add a path-taking wrapper that calls `@embedFile` from this repo.
 
 ## Docs
 

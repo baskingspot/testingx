@@ -12,6 +12,7 @@ Both halves are one dependency and need Zig 0.16.
 - [Getting started with benchmarks](#getting-started-with-benchmarks): write a suite, wire the executable, compare two runs.
 - [Test runner flags](#test-runner-flags): formats, filtering, timeouts, flake hunting.
 - [Writing benchmarks](#writing-benchmarks): the loop, sub-benchmarks, names, and output.
+- [Embedded fixtures](#embedded-fixtures): base64 and hex blobs, and txtar archives, read at comptime.
 - [For library authors](#for-library-authors): keep the runner and benchmarks out of your consumers' builds.
 - [Limits](#limits): what the language does not allow this runner to do.
 
@@ -291,6 +292,53 @@ zig build bench -- --benchtime=8x --count=1 --no-env
 ```
 
 That runs every benchmark eight times and fails if any of them fails. Gate on the exit code.
+
+# Embedded fixtures
+
+Two helpers keep binary test data out of version control without a runtime file load.
+
+For one file, decode an embedded blob at comptime:
+
+```zig
+const cert_der = testingx.b64(@embedFile("cert.der.b64"));
+const frame = testingx.hex(@embedFile("frame.hex"));
+```
+
+For several, embed a txtar archive and read sections by name:
+
+```zig
+const fx = testingx.fixtures(@embedFile("fixtures.txtar"));
+
+pub const server_cert_der = fx.b64("server_cert_der");
+pub const rsa_pss_key_pem = fx.get("rsa_pss_key_pem");
+```
+
+The archive holds plain text sections. The encoding is chosen in Zig, not declared in the archive:
+
+```text
+ztls certificate fixtures.
+-- server_cert_der --
+MIIBlzCCATygAwIBAgIUPpCfJzgbUglYnrYT0qoD85WC/9Ew...
+-- rsa_pss_key_pem --
+-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCO0v0Z...
+```
+
+`get` returns the section text as txtar stores it. A non-empty section ends with a newline. `b64` and `hex` ignore whitespace and decode at comptime, so wrapped base64 works.
+
+The value is the archive, and its type is generated from the embedded bytes. `files` and the decoders resolve to compile-time constants, so there is no parse at startup and no allocator. `fx.files` lists every section in archive order, and `fx.find(name)` looks one up at runtime when the name is not a literal. A name that is not in the archive is a compile error in `get`, `b64`, and `hex`. So is a duplicate marker name.
+
+`@embedFile` resolves a path relative to the source file that contains it. The helpers take the embedded bytes rather than a path, so the `@embedFile(...)` call stays in your file. There is no runtime file access.
+
+Write the encoded text with the usual tools. Whitespace is ignored when decoding, so wrapping is safe:
+
+```sh
+base64 -w 76 cert.der > cert.der.b64   # GNU
+base64 -i cert.der > cert.der.b64      # macOS
+xxd -p frame.bin > frame.hex
+```
+
+The `.b64` and `.hex` suffixes are a convention for humans; the helpers only see the text. One blob does not need an archive, and an archive of plain text sections does not need either decoder.
 
 # For library authors
 
