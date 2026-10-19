@@ -134,6 +134,9 @@ fn decode(comptime text: []const u8, comptime encoding: Encoding) []const u8 {
 }
 
 fn buildFiles(comptime n: usize, comptime entries: [n]txtar.File) [n]Fixture {
+    // The duplicate-name check is quadratic in the section count, and real
+    // archives (ztls carries 73 sections) run past the default budget.
+    @setEvalBranchQuota(@intCast(n * n * 64 + 10_000));
     var files: [n]Fixture = undefined;
     for (entries, 0..) |entry, i| {
         files[i] = .{ .name = entry.name, .text = entry.text };
@@ -211,4 +214,21 @@ test "embedded single blob" {
         &.{ 0, 0xff, 0x10 },
         hex(@embedFile("testdata/blob.hex")),
     );
+}
+
+test "a large archive builds without hitting the eval budget" {
+    // The duplicate-name check compares every section against the ones before
+    // it, so the comptime cost grows with the square of the section count. A
+    // real archive (ztls carries 73) runs past the default 1000 branches.
+    const big = comptime blk: {
+        @setEvalBranchQuota(100_000);
+        var text: []const u8 = "";
+        for (0..100) |i| {
+            text = text ++ std.fmt.comptimePrint("-- section{d} --\n00\n", .{i});
+        }
+        break :blk text;
+    };
+    const fx = fixtures(big);
+    try std.testing.expectEqual(@as(usize, 100), fx.files.len);
+    try std.testing.expectEqualStrings("00\n", fx.get("section99"));
 }
