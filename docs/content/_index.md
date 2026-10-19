@@ -6,7 +6,7 @@ A test runner that replaces the built-in one, and benchmarks that sit beside you
 
 The test runner writes plain text to stderr. A terminal gets colored dots; a pipe or a CI log gets one line per failure and nothing for passes, which is what `go test` prints. The benchmark side follows Go's `testing.B`: a benchmark is a function that loops, and the output is the Go benchmark format, so `benchstat` compares two runs without any glue.
 
-Both halves are one dependency and need Zig 0.16.
+Both halves are one dependency and need Zig 0.16. The project is incubating, so the API will change.
 
 - [Getting started with the runner](#getting-started-with-the-runner): wire it into `build.zig`, then read the output.
 - [Getting started with benchmarks](#getting-started-with-benchmarks): write a suite, wire the executable, compare two runs.
