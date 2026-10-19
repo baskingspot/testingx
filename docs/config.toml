@@ -3,7 +3,7 @@
 base_url = "https://baskingspot.dev/testingx"
 theme = "baskingspot"
 title = "testingx"
-description = "A test runner and Go-style benchmarks for Zig 0.16."
+description = "Plain-text tests and Go-style benchmarks for Zig 0.16."
 
 generate_feeds = false
 build_search_index = false

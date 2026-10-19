@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-Plain-text tests and Go-style benchmarks for Zig.
+Plain-text tests and Go-style benchmarks for Zig 0.16.
 
 Zig's built-in test runner draws a progress display and speaks a binary protocol to the build runner, which is why output piped to a file is unreadable and why writing to stdout in a test can deadlock. testingx replaces it with plain text on stderr. The benchmark half follows Go's `testing.B` and prints the Go benchmark format, so `benchstat` compares two runs with no glue. One dependency, no dependencies of its own, Zig 0.16 only.
 
@@ -45,7 +45,7 @@ run_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}));
 
 Benchmarks take one more step. `testingx.addBench` builds the suite and returns the run step. The [guide](https://baskingspot.dev/testingx/#getting-started-with-benchmarks) has the wiring, including the `.imports` list the suite needs.
 
-testingx builds with Zig 0.16 only. The project is incubating and the API will change.
+testingx builds with Zig 0.16 only.
 
 ## Documentation
 
