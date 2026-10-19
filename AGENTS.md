@@ -50,3 +50,18 @@ Change these only together with the fixture checks in `build.zig`, which assert 
 
 - The guide is written for people adopting the library, not for contributors. Keep it that way.
 - The site deploys from CI after Terraform in `baskingspot/site` registers the Worker. Do not deploy by hand.
+
+## Changelog
+
+`CHANGELOG.md` is one file, Keep a Changelog format, newest first. Add a bullet
+under `## [Unreleased]` in the same change that alters something a user can
+notice: the public API, expected behavior, performance a benchmark row would
+show, a supported backend, or the build requirements. Docs, CI, and internal
+refactors do not need one unless they change how someone uses the package.
+
+Write from the user's side: what changed, and what they must do about it. Name
+the symbol, flag, or error. One line, under Added, Changed, Fixed, or Removed.
+
+To release, dispatch the repo's `release.yml` with the version. The workflow
+moves the Unreleased section into a dated heading, sets `.version` in
+`build.zig.zon`, commits, tags, and opens the GitHub release. Do not tag by hand.
