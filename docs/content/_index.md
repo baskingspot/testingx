@@ -107,7 +107,7 @@ Put the import in a top-level `const`. An inline `@import` inside `benchmarkMain
 
 `addBench` builds a ReleaseFast executable around your suite and returns the run step:
 
-````zig
+```zig
 const testingx = @import("testingx");
 
 pub fn build(b: *std.Build) void {
@@ -124,7 +124,9 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_bench.addArgs(args);
     b.step("bench", "Run benchmarks").dependOn(&run_bench.step);
 }
-`.imports` is how the suite reaches your code. The suite module is created for it, so it inherits nothing from the rest of the build; list every module the suite files import.
+```
+
+The `.imports` field is how the suite reaches your code. The suite module is created for it, so it inherits nothing from the rest of the build; list every module the suite files import.
 
 ReleaseFast is the default because Debug numbers are noise. Pass `.optimize = .ReleaseSafe` when a check depends on safety, and `.target` to cross-build.
 
@@ -134,7 +136,7 @@ For a profiling binary (`perf`, `objdump`), call `addBenchExe` instead and insta
 
 ```sh
 zig build bench
-````
+```
 
 ```text
 target: aarch64-linux-gnu
