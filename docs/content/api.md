@@ -1,0 +1,6 @@
++++
+title = "API reference"
+template = "api.html"
++++
+
+The API reference is generated from data/api.json at build time. The guide shows the runner, benchmarks, and fixtures. This page is the contract for each symbol.
