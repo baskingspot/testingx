@@ -5,7 +5,7 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-19
+## [0.1.1] - 2026-10-19
 
 ### Added
 

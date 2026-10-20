@@ -23,7 +23,7 @@ The [API reference](api/) documents every symbol.
 ## Install
 
 ```sh
-zig fetch --save https://github.com/baskingspot/testingx/archive/refs/tags/v0.1.0.tar.gz
+zig fetch --save https://github.com/baskingspot/testingx/archive/refs/tags/v0.1.1.tar.gz
 ```
 
 ## Wire it into build.zig
