@@ -53,7 +53,6 @@ pub fn addBench(b: *std.Build, options: BenchOptions) *std.Build.Step.Run {
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
 
     const mod = b.addModule("testingx", .{
         .root_source_file = b.path("src/root.zig"),
@@ -157,30 +156,18 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
 
-    // The API reference: `zig build docs` writes the docgen JSON under
-    // docs/data, where Zola reads it from the api.html template.
-    const docgen_dep = b.lazyDependency("docgen", .{
-        .target = target,
-        .optimize = optimize,
-        .exe = true,
-    }) orelse return;
-    const docgen = docgen_dep.artifact("docgen");
-    const docs_run = b.addRunArtifact(docgen);
-    docs_run.addArgs(&.{
-        "--root",     "src/root.zig",
-        "--title",    "testingx",
-        "--repo-url", "https://github.com/baskingspot/testingx",
-        "--rev",      "main",
-        "--format",   "json",
-        "--out",
+    // The API reference: `zig build docs` installs the emitted docs under
+    // docs/static/api, where Zola picks them up as static files.
+    const mod_docs = b.addObject(.{
+        .name = "testingx",
+        .root_module = mod,
     });
-    const api = docs_run.addOutputDirectoryArg("api");
     const docs_install = b.addInstallDirectory(.{
-        .source_dir = api,
-        .install_dir = .{ .custom = "../docs/data" },
+        .source_dir = mod_docs.getEmittedDocs(),
+        .install_dir = .{ .custom = "../docs/static/api" },
         .install_subdir = "",
     });
-    const docs_step = b.step("docs", "Generate the API JSON into docs/data");
+    const docs_step = b.step("docs", "Generate API docs into docs/static/api");
     docs_step.dependOn(&docs_install.step);
 
     const check = b.step("check", "Compile tests and the benchmark executable without running");

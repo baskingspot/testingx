@@ -3,12 +3,7 @@
     .version = "0.1.1",
     .fingerprint = 0x655740ecfb79bf89, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
-    .dependencies = .{
-        .docgen = .{
-            .url = "git+https://github.com/baskingspot/docgen#de811853ea2e937a2397c1d45a2350ae39a1c0aa",
-            .hash = "docgen-0.0.0-vnM6Vf3zAQAAdrMwRp_P0teDytVZPRId-MpdxgCEwJPN",
-            .lazy = true,
-        },
+   .dependencies = .{
     },
     .paths = .{
         "build.zig",
