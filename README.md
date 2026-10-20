@@ -28,7 +28,7 @@ Not implemented:
 ## Install
 
 ```sh
-zig fetch --save https://baskingspot.dev/testingx/v0.1.1
+zig fetch --save https://baskingspot.dev/testingx/v0.1.1.tar.gz
 ```
 
 Point the test runner at the dependency:
