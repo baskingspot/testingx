@@ -283,6 +283,22 @@ fn addFixtureChecks(
     empty.addArg("--filter=no matching test");
     empty.expectStdErrMatch("no tests matched filter");
 
+    // --allow-empty-filter turns that into a passing zero summary, so a build
+    // can forward one filter to every test binary.
+    const empty_allowed = addRunnerCheck(b, test_step, fixtures, 0);
+    empty_allowed.addArg("--filter=no matching test");
+    empty_allowed.addArg("--allow-empty-filter");
+    empty_allowed.expectStdErrMatch(
+        "testingx: 0 passed, 0 failed, 0 skipped (of 0 total) in ",
+    );
+    empty_allowed.expectStdErrMatch("ALL TESTS PASSED\n");
+
+    // A shared CI workflow can set the same policy through the environment.
+    const env_empty_allowed = addRunnerCheck(b, test_step, fixtures, 0);
+    env_empty_allowed.setEnvironmentVariable("TESTINGX_ALLOW_EMPTY_FILTER", "1");
+    env_empty_allowed.addArg("--filter=no matching test");
+    env_empty_allowed.expectStdErrMatch("ALL TESTS PASSED\n");
+
     // A shared CI workflow can set the format through the environment.
     const env_format = addRunnerCheck(b, test_step, fixtures, 0);
     env_format.setEnvironmentVariable("TESTINGX_FORMAT", "testname");
@@ -311,6 +327,7 @@ fn addRunnerCheck(
         "TESTINGX_FILTER",
         "TESTINGX_TIMEOUT",
         "TESTINGX_FAIL_FAST",
+        "TESTINGX_ALLOW_EMPTY_FILTER",
         "NO_COLOR",
     }) |key| run.removeEnvironmentVariable(key);
     run.expectExitCode(exit_code);

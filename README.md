@@ -13,7 +13,7 @@ Zig's built-in test runner draws a progress display and speaks a binary protocol
 
 - [Getting started with the runner](https://baskingspot.dev/testingx/#getting-started-with-the-runner): point `.test_runner` at `src/runner.zig` with `.mode = .simple`. Passing tests print nothing without a terminal, so CI logs show failures and the summary.
 - [Getting started with benchmarks](https://baskingspot.dev/testingx/#getting-started-with-benchmarks): a suite is a file with `pub fn benchmarkMain(b: *testingx.B) !void`. `addBench` builds it as a ReleaseFast executable.
-- [Test runner flags](https://baskingspot.dev/testingx/#test-runner-flags): `--format`, `--filter`, `--timeout`, `--count`, `--rerun-fails`, `--shuffle`, and `--slowest`. A wrong filter fails instead of passing silently.
+- [Test runner flags](https://baskingspot.dev/testingx/#test-runner-flags): `--format`, `--filter`, `--timeout`, `--count`, `--rerun-fails`, `--shuffle`, and `--slowest`. A wrong filter fails instead of passing silently; `--allow-empty-filter` relaxes that for multi-binary builds.
 - [Writing benchmarks](https://baskingspot.dev/testingx/#writing-benchmarks): `b.loop()`, `defer b.keepAlive(sink)`, `b.setBytes`, `b.reportMetric`, and `b.run` for sub-benchmarks. Names use benchfmt parts, so benchstat groups a matrix.
 - [Embedded fixtures](https://baskingspot.dev/testingx/#embedded-fixtures): `testingx.b64` and `testingx.hex` decode one embedded file, and `testingx.fixtures` reads a txtar archive by name at compile time.
 - [For library authors](https://baskingspot.dev/testingx/#for-library-authors): `.lazy = true` plus `if (b.pkg_hash.len != 0) return;` keeps the runner and benchmarks out of a consumer's build.

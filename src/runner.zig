@@ -16,6 +16,7 @@
 //! Flags, passed after `zig build test --`:
 //!   --seed=N            random seed, printed in the summary for reproduction
 //!   --filter=P          only tests whose name matches P; a filter that matches nothing fails
+//!   --allow-empty-filter  a filter that matches nothing prints a zero summary and exits 0
 //!   --format=NAME       quiet, dots, testname, or verbose (default: dots on a terminal)
 //!   --timeout=D         stop after D like 500ms or 10m (default 10m, off or 0 disables)
 //!   --count=N           run the whole suite N times (default 1)
@@ -27,7 +28,8 @@
 //!
 //! Environment, for CI policy that a shared workflow sets without editing the
 //! repository: TESTINGX_FORMAT, TESTINGX_FILTER, TESTINGX_TIMEOUT,
-//! TESTINGX_FAIL_FAST, and NO_COLOR. Command-line flags win over all of them.
+//! TESTINGX_FAIL_FAST, TESTINGX_ALLOW_EMPTY_FILTER, and NO_COLOR. Command-line
+//! flags win over all of them.
 //!
 //! Filters use the benchmark grammar: plain text contains, ^ anchors start,
 //! $ anchors end, * matches any bytes, and commas separate alternatives.
@@ -108,6 +110,7 @@ const Flags = struct {
     plain: bool = false,
     fail_fast: bool = false,
     filter: ?[]const u8 = null,
+    allow_empty_filter: bool = false,
     /// Nanoseconds. Null disables the watchdog.
     timeout_ns: ?u64 = 10 * time.ns_per_min,
     timeout_text: []const u8 = "10m",
@@ -128,6 +131,7 @@ const EnvOptions = struct {
     filter: ?[]const u8 = null,
     timeout: ?[]const u8 = null,
     fail_fast: ?[]const u8 = null,
+    allow_empty_filter: ?[]const u8 = null,
     no_color: bool = false,
 };
 
@@ -152,6 +156,9 @@ fn collectArgs(
     }
     if (envBool(env.fail_fast)) |on| {
         if (on) try args.append(arena, "--fail-fast");
+    }
+    if (envBool(env.allow_empty_filter)) |on| {
+        if (on) try args.append(arena, "--allow-empty-filter");
     }
     if (env.no_color) try args.append(arena, "--plain");
     try args.appendSlice(arena, argv[1..]);
@@ -188,6 +195,8 @@ fn parse(argv: []const []const u8) !Parsed {
             out.flags.plain = true;
         } else if (mem.eql(u8, arg, "--fail-fast")) {
             out.flags.fail_fast = true;
+        } else if (mem.eql(u8, arg, "--allow-empty-filter")) {
+            out.flags.allow_empty_filter = true;
         } else if (try flagValue(argv, &i, arg, "--filter")) |value| {
             out.flags.filter = value;
         } else if (try flagValue(argv, &i, arg, "--format")) |value| {
@@ -377,6 +386,7 @@ pub fn main(init: process.Init) u8 {
         .filter = envGet(arena, environ, "TESTINGX_FILTER"),
         .timeout = envGet(arena, environ, "TESTINGX_TIMEOUT"),
         .fail_fast = envGet(arena, environ, "TESTINGX_FAIL_FAST"),
+        .allow_empty_filter = envGet(arena, environ, "TESTINGX_ALLOW_EMPTY_FILTER"),
         .no_color = if (envGet(arena, environ, "NO_COLOR")) |value| value.len != 0 else false,
     }) catch |err|
         process.fatal("testingx: cannot build the argument list: {t}", .{err});
@@ -417,8 +427,17 @@ pub fn main(init: process.Init) u8 {
             process.fatal("testingx: cannot collect tests: {t}", .{err});
     }
     if (selected.items.len == 0) {
-        print("no tests matched filter \"{s}\"\n", .{parsed.flags.filter.?});
-        return 1;
+        // A multi-binary build forwards one set of flags to every binary, so a
+        // binary with no matching test must be able to pass. The default stays
+        // strict: a typo in a single-binary run still fails.
+        if (!parsed.flags.allow_empty_filter) {
+            print("no tests matched filter \"{s}\"\n", .{parsed.flags.filter.?});
+            return 1;
+        }
+        const empty_start: Io.Clock.Timestamp = .now(io, .awake);
+        printSummary(.{}, 0, empty_start.untilNow(io).raw);
+        print("ALL TESTS PASSED\n", .{});
+        return 0;
     }
 
     const shuffle_seed: ?u32 = switch (parsed.flags.shuffle) {
@@ -517,15 +536,7 @@ pub fn main(init: process.Init) u8 {
 
     const elapsed = start.untilNow(io).raw;
 
-    print("testingx: {d} passed, {d} failed, {d} skipped", .{
-        counts.pass, counts.fail, counts.skip,
-    });
-    if (counts.flaky > 0) print(", {d} flaky", .{counts.flaky});
-    if (counts.leak > 0) print(", {d} leaked", .{counts.leak});
-    if (counts.log_errs > 0) print(", {d} error logs", .{counts.log_errs});
-    print(" (of {d} total) in {d}ms (seed: 0x{x})\n", .{
-        total, elapsed.toMilliseconds(), testing.random_seed,
-    });
+    printSummary(counts, total, elapsed);
     if (counts.flaky > 0) {
         print("testingx: flaky: ", .{});
         for (flaky_tests.items, 0..) |test_idx, idx| {
@@ -546,6 +557,18 @@ pub fn main(init: process.Init) u8 {
     }
 
     return if (counts.fail != 0 or counts.leak != 0 or counts.log_errs != 0) 1 else 0;
+}
+
+fn printSummary(counts: Counts, total: usize, elapsed: Io.Duration) void {
+    print("testingx: {d} passed, {d} failed, {d} skipped", .{
+        counts.pass, counts.fail, counts.skip,
+    });
+    if (counts.flaky > 0) print(", {d} flaky", .{counts.flaky});
+    if (counts.leak > 0) print(", {d} leaked", .{counts.leak});
+    if (counts.log_errs > 0) print(", {d} error logs", .{counts.log_errs});
+    print(" (of {d} total) in {d}ms (seed: 0x{x})\n", .{
+        total, elapsed.toMilliseconds(), testing.random_seed,
+    });
 }
 
 const Counts = struct {
@@ -972,12 +995,13 @@ test "friendlyName strips named test that looks like test_N" {
 
 test "flags parse equals and separated forms" {
     const parsed = try parse(&[_][]const u8{
-        "test",          "--format=testname", "--fail-fast",     "--filter=basic arithmetic",
-        "--seed=0x1234", "--count=2",         "--rerun-fails=3", "--shuffle=off",
-        "--slowest=4",   "--timeout=30s",
+        "test",                 "--format=testname", "--fail-fast",   "--filter=basic arithmetic",
+        "--allow-empty-filter", "--seed=0x1234",     "--count=2",     "--rerun-fails=3",
+        "--shuffle=off",        "--slowest=4",       "--timeout=30s",
     });
     try testing.expectEqual(Format.testname, parsed.flags.format.?);
     try testing.expect(parsed.flags.fail_fast);
+    try testing.expect(parsed.flags.allow_empty_filter);
     try testing.expectEqualStrings("basic arithmetic", parsed.flags.filter.?);
     try testing.expectEqual(@as(?u32, 0x1234), parsed.seed);
     try testing.expectEqual(@as(usize, 2), parsed.flags.count);
@@ -1150,6 +1174,7 @@ test "environment options come before the command line" {
         .filter = "env pattern",
         .timeout = "30s",
         .fail_fast = "true",
+        .allow_empty_filter = "1",
         .no_color = true,
     });
 
@@ -1158,15 +1183,17 @@ test "environment options come before the command line" {
     try testing.expectEqualStrings("--filter=env pattern", args[2]);
     try testing.expectEqualStrings("--timeout=30s", args[3]);
     try testing.expectEqualStrings("--fail-fast", args[4]);
-    try testing.expectEqualStrings("--plain", args[5]);
+    try testing.expectEqualStrings("--allow-empty-filter", args[5]);
+    try testing.expectEqualStrings("--plain", args[6]);
     // The command line is last, so parse() lets it override the variable.
-    try testing.expectEqualStrings("--format=quiet", args[6]);
-    try testing.expectEqualStrings("--filter=argv", args[7]);
+    try testing.expectEqualStrings("--format=quiet", args[7]);
+    try testing.expectEqualStrings("--filter=argv", args[8]);
 
     const parsed = try parse(args);
     try testing.expectEqual(Format.quiet, parsed.flags.format.?);
     try testing.expectEqualStrings("argv", parsed.flags.filter.?);
     try testing.expect(parsed.flags.fail_fast);
+    try testing.expect(parsed.flags.allow_empty_filter);
     try testing.expect(parsed.flags.plain);
 }
 

@@ -171,6 +171,7 @@ zig build test -- --format=testname --filter=^fixtures.test.skip demonstration$
 | ---------------------- | ------------------------------ | ------------------------------------------------------------------------------ |
 | `--format=NAME`        | dots on a TTY, quiet otherwise | `quiet`, `dots`, `testname`, `verbose`                                         |
 | `--filter=P`           | none                           | Run tests whose name matches P. A filter that matches nothing fails the run.   |
+| `--allow-empty-filter` | off                            | A filter that matches nothing prints a zero summary and passes                 |
 | `--seed=N`             | build seed                     | Random seed, printed in the summary                                            |
 | `--timeout=D`          | `10m`                          | Stop after D (`500ms`, `10m`); `off` disables. Names the test it was stuck in. |
 | `--count=N`            | 1                              | Run the whole suite N times                                                    |
@@ -184,13 +185,16 @@ zig build test -- --format=testname --filter=^fixtures.test.skip demonstration$
 
 A few settings also come from the environment, so a shared CI workflow can change them without editing the repository. A command-line flag wins over the variable.
 
-| Variable             | Same as                                  |
-| -------------------- | ---------------------------------------- |
-| `TESTINGX_FORMAT`    | `--format`                               |
-| `TESTINGX_FILTER`    | `--filter`                               |
-| `TESTINGX_TIMEOUT`   | `--timeout`                              |
-| `TESTINGX_FAIL_FAST` | `--fail-fast` (`1` or `true`)            |
-| `NO_COLOR`           | `--plain`, when set to a non-empty value |
+| Variable                      | Same as                                  |
+| ----------------------------- | ---------------------------------------- |
+| `TESTINGX_FORMAT`             | `--format`                               |
+| `TESTINGX_FILTER`             | `--filter`                               |
+| `TESTINGX_TIMEOUT`            | `--timeout`                              |
+| `TESTINGX_FAIL_FAST`          | `--fail-fast` (`1` or `true`)            |
+| `TESTINGX_ALLOW_EMPTY_FILTER` | `--allow-empty-filter` (`1` or `true`)   |
+| `NO_COLOR`                    | `--plain`, when set to a non-empty value |
+
+`--allow-empty-filter` exists for a build with more than one test binary. Pass the same flags to every binary, and the binaries with no matching test print a zero summary and exit 0 instead of failing. The default stays strict: a typo in a single-binary run still fails.
 
 ## Formats
 

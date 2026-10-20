@@ -42,7 +42,7 @@ Change these only together with the fixture checks in `build.zig`, which assert 
 
 - Do not import `src/runner.zig` from another file, and do not import another file from it. The second fails with `file exists in modules 'root' and 'root'`.
 - Do not add `has_side_effects` to test runs. In `.mode = .simple` the step declares no outputs, and Zig already reruns it.
-- Environment variables set a default and flags win: `TESTINGX_FORMAT`, `TESTINGX_FILTER`, `TESTINGX_TIMEOUT`, `TESTINGX_FAIL_FAST`, `NO_COLOR`, plus `TESTINGX_BENCH_FILTER` and `TESTINGX_BENCH_JSONL` for benchmarks. The fixture checks strip them from the ambient environment.
+- Environment variables set a default and flags win: `TESTINGX_FORMAT`, `TESTINGX_FILTER`, `TESTINGX_TIMEOUT`, `TESTINGX_FAIL_FAST`, `TESTINGX_ALLOW_EMPTY_FILTER`, `NO_COLOR`, plus `TESTINGX_BENCH_FILTER` and `TESTINGX_BENCH_JSONL` for benchmarks. The fixture checks strip them from the ambient environment.
 - The docs build is part of `just ci` and fails on an unlabeled code fence.
 - `@embedFile` resolves a path against the file that contains the builtin, not the caller of an inline function. The fixture helpers take embedded bytes for that reason; do not add a path-taking wrapper that calls `@embedFile` from this repo.
 
