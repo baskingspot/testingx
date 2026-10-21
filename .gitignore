@@ -8,6 +8,6 @@ zig-pkg/
 docs/themes/
 .wrangler/
 
-# The API reference `zig build docs` installs (a build product).
-docs/static/api/
+# The API JSON `just doc` generates, read by the theme's api.html template.
+docs/data/
 docs/content/changelog.md

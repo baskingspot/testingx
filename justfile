@@ -26,16 +26,18 @@ bench-e2e:
     just bench --benchmem --count=10 --benchtime=100ms > "${tmp}/run2.txt"
     benchstat "${tmp}/run1.txt" "${tmp}/run2.txt"
 
-[doc("Build the site into zig-out/site/testingx/: the guide (Zola, from docs/) and the API reference under api/")]
+[private]
+api:
+    docgen --root src/root.zig --title testingx --repo-url https://github.com/baskingspot/testingx --rev main --format json --out docs/data
+
+[doc("Build the site into zig-out/site/testingx/: the guide (Zola, from docs/) and the docgen JSON rendered by the theme's api.html")]
 [group("docs")]
-doc:
-    zig build docs
+doc: api
     baskingspot-docs build testingx
 
 [doc("Edit the site with live reload (http://127.0.0.1:1111)")]
 [group("docs")]
-guide:
-    zig build docs
+guide: api
     baskingspot-docs serve testingx
 
 [doc("Deploy the rendered site to Cloudflare as an assets-only Worker (config in wrangler.jsonc). Needs CLOUDFLARE_API_TOKEN in the environment, plus CLOUDFLARE_ACCOUNT_ID if the token can see more than one account")]
