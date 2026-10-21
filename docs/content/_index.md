@@ -8,8 +8,7 @@ The test runner writes plain text to stderr. A terminal gets colored dots; a pip
 
 All of it is one dependency and needs Zig 0.16.
 
-- [Getting started with the runner](#getting-started-with-the-runner): wire it into `build.zig`, then read the output.
-- [Getting started with benchmarks](#getting-started-with-benchmarks): write a suite, wire the executable, compare two runs.
+- [Your first benchmark](#your-first-benchmark): write a suite, wire the executable, compare two runs.
 - [Test runner flags](#test-runner-flags): formats, filtering, timeouts, flake hunting.
 - [Writing benchmarks](#writing-benchmarks): the loop, sub-benchmarks, names, and output.
 - [Embedded fixtures](#embedded-fixtures): base64 and hex blobs, and txtar archives, read at comptime.
@@ -18,7 +17,7 @@ All of it is one dependency and needs Zig 0.16.
 
 The [API reference](api/) documents every symbol.
 
-# Getting started with the runner
+# Getting started
 
 ## Install
 
@@ -76,7 +75,7 @@ Leaks and error logs add clauses to the count: `, 1 leaked`, `, 2 error logs`, `
 
 A test that leaks memory fails. A test that emits an `error` level log fails, even when it returns success. Both match the built-in runner.
 
-# Getting started with benchmarks
+# Your first benchmark
 
 ## Write the suite
 
