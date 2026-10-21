@@ -156,20 +156,6 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
 
-    // The API reference: `zig build docs` installs the emitted docs under
-    // docs/static/api, where Zola picks them up as static files.
-    const mod_docs = b.addObject(.{
-        .name = "testingx",
-        .root_module = mod,
-    });
-    const docs_install = b.addInstallDirectory(.{
-        .source_dir = mod_docs.getEmittedDocs(),
-        .install_dir = .{ .custom = "../docs/static/api" },
-        .install_subdir = "",
-    });
-    const docs_step = b.step("docs", "Generate API docs into docs/static/api");
-    docs_step.dependOn(&docs_install.step);
-
     const check = b.step("check", "Compile tests and the benchmark executable without running");
     check.dependOn(&tests.step);
     check.dependOn(&addBenchExe(b, .{
