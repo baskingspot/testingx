@@ -170,6 +170,8 @@ zig build test -- --format=testname --filter=^fixtures.test.skip demonstration$
 | ---------------------- | ------------------------------ | ------------------------------------------------------------------------------ |
 | `--format=NAME`        | dots on a TTY, quiet otherwise | `quiet`, `dots`, `testname`, `verbose`                                         |
 | `--filter=P`           | none                           | Run tests whose name matches P. A filter that matches nothing fails the run.   |
+| `--skip=P`             | none                           | Drop tests whose name matches P, after `--filter` has selected                 |
+| `--list`               | off                            | Print the selected test names to stdout and run nothing                        |
 | `--allow-empty-filter` | off                            | A filter that matches nothing prints a zero summary and passes                 |
 | `--seed=N`             | build seed                     | Random seed, printed in the summary                                            |
 | `--timeout=D`          | `10m`                          | Stop after D (`500ms`, `10m`); `off` disables. Names the test it was stuck in. |
@@ -188,10 +190,15 @@ A few settings also come from the environment, so a shared CI workflow can chang
 | ----------------------------- | ---------------------------------------- |
 | `TESTINGX_FORMAT`             | `--format`                               |
 | `TESTINGX_FILTER`             | `--filter`                               |
+| `TESTINGX_SKIP`               | `--skip`                                 |
 | `TESTINGX_TIMEOUT`            | `--timeout`                              |
 | `TESTINGX_FAIL_FAST`          | `--fail-fast` (`1` or `true`)            |
 | `TESTINGX_ALLOW_EMPTY_FILTER` | `--allow-empty-filter` (`1` or `true`)   |
 | `NO_COLOR`                    | `--plain`, when set to a non-empty value |
+
+`--list` prints the fully qualified names, which are the strings the filters match, so the output feeds back into `--filter` for a single test. It exits 0 even when the selection is empty.
+
+`--skip` is the mirror of `--filter`: the filter chooses, then the skip removes. A skip that leaves nothing to run passes, because the exclusion was deliberate.
 
 `--allow-empty-filter` exists for a build with more than one test binary. Pass the same flags to every binary, and the binaries with no matching test print a zero summary and exit 0 instead of failing. The default stays strict: a typo in a single-binary run still fails.
 

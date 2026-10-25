@@ -7,6 +7,11 @@ All notable changes to testingx are recorded here. The format follows
 
 ### Added
 
+- `--skip=P` removes tests from the `--filter` selection, and
+  `TESTINGX_SKIP` sets it from the environment. A skip that leaves nothing to
+  run passes. `--list` prints the selected fully qualified names to stdout and
+  runs nothing, so CI can shard on the output.
+
 - `--disasm PATTERN` prints the linker symbol, its address range, and the
   disassembly of each matching benchmark, with source lines and addresses
   stripped so two builds diff. `--cycles` adds `cycles/op`, `instructions/op`,

@@ -203,6 +203,25 @@ fn addFixtureChecks(
     fail_fast.addArg("--fail-fast");
     fail_fast.expectStdErrMatch("2 passed, 1 failed, 1 skipped (of 11 total)");
 
+    // --list prints the names the filters match, to stdout, and runs nothing.
+    const listed = addRunnerRun(b, test_step, fixtures, 0);
+    listed.addArg("--list");
+    listed.addArg("--filter=fuzz");
+    listed.expectStdErrEqual("");
+    listed.expectStdOutMatch("fixtures.test.fuzz: simple corpus\n");
+
+    // --skip removes from the filter's selection, and a skip that empties the
+    // run passes instead of reporting a filter mistake.
+    const skipped = addRunnerCheck(b, test_step, fixtures, 0);
+    skipped.addArg("--filter=fuzz");
+    skipped.addArg("--skip=without");
+    skipped.expectStdErrMatch("2 passed, 0 failed, 0 skipped (of 2 total)");
+
+    const skipped_all = addRunnerCheck(b, test_step, fixtures, 0);
+    skipped_all.addArg("--filter=fuzz");
+    skipped_all.addArg("--skip=fuzz");
+    skipped_all.expectStdErrMatch("0 passed, 0 failed, 0 skipped (of 0 total)");
+
     const dots = addRunnerCheck(b, test_step, fixtures, 0);
     dots.addArg("--filter=basic arithmetic");
     dots.addArg("--format=dots");
@@ -311,7 +330,7 @@ fn addFixtureChecks(
     env_overridden.expectStdErrMatch("1 passed, 0 failed, 0 skipped (of 1 total)");
 }
 
-fn addRunnerCheck(
+fn addRunnerRun(
     b: *std.Build,
     parent: *std.Build.Step,
     tests: *std.Build.Step.Compile,
@@ -324,13 +343,24 @@ fn addRunnerCheck(
         "TESTINGX_EXPECT_SEED",
         "TESTINGX_FORMAT",
         "TESTINGX_FILTER",
+        "TESTINGX_SKIP",
         "TESTINGX_TIMEOUT",
         "TESTINGX_FAIL_FAST",
         "TESTINGX_ALLOW_EMPTY_FILTER",
         "NO_COLOR",
     }) |key| run.removeEnvironmentVariable(key);
     run.expectExitCode(exit_code);
-    run.expectStdOutEqual("");
     parent.dependOn(&run.step);
+    return run;
+}
+
+fn addRunnerCheck(
+    b: *std.Build,
+    parent: *std.Build.Step,
+    tests: *std.Build.Step.Compile,
+    exit_code: u8,
+) *std.Build.Step.Run {
+    const run = addRunnerRun(b, parent, tests, exit_code);
+    run.expectStdOutEqual("");
     return run;
 }

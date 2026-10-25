@@ -16,6 +16,8 @@
 //! Flags, passed after `zig build test --`:
 //!   --seed=N            random seed, printed in the summary for reproduction
 //!   --filter=P          only tests whose name matches P; a filter that matches nothing fails
+//!   --skip=P            drop tests whose name matches P after --filter selects
+//!   --list              print the selected names, one per line, to stdout and exit 0
 //!   --allow-empty-filter  a filter that matches nothing prints a zero summary and exits 0
 //!   --format=NAME       quiet, dots, testname, or verbose (default: dots on a terminal)
 //!   --timeout=D         stop after D like 500ms or 10m (default 10m, off or 0 disables)
@@ -27,9 +29,9 @@
 //!   --fail-fast         stop at the first failure
 //!
 //! Environment, for CI policy that a shared workflow sets without editing the
-//! repository: TESTINGX_FORMAT, TESTINGX_FILTER, TESTINGX_TIMEOUT,
-//! TESTINGX_FAIL_FAST, TESTINGX_ALLOW_EMPTY_FILTER, and NO_COLOR. Command-line
-//! flags win over all of them.
+//! repository: TESTINGX_FORMAT, TESTINGX_FILTER, TESTINGX_SKIP,
+//! TESTINGX_TIMEOUT, TESTINGX_FAIL_FAST, TESTINGX_ALLOW_EMPTY_FILTER, and
+//! NO_COLOR. Command-line flags win over all of them.
 //!
 //! Filters use the benchmark grammar: plain text contains, ^ anchors start,
 //! $ anchors end, * matches any bytes, and commas separate alternatives.
@@ -110,6 +112,8 @@ const Flags = struct {
     plain: bool = false,
     fail_fast: bool = false,
     filter: ?[]const u8 = null,
+    skip: ?[]const u8 = null,
+    list: bool = false,
     allow_empty_filter: bool = false,
     /// Nanoseconds. Null disables the watchdog.
     timeout_ns: ?u64 = 10 * time.ns_per_min,
@@ -129,6 +133,7 @@ const Parsed = struct {
 const EnvOptions = struct {
     format: ?[]const u8 = null,
     filter: ?[]const u8 = null,
+    skip: ?[]const u8 = null,
     timeout: ?[]const u8 = null,
     fail_fast: ?[]const u8 = null,
     allow_empty_filter: ?[]const u8 = null,
@@ -150,6 +155,9 @@ fn collectArgs(
     }
     if (env.filter) |value| {
         try args.append(arena, try std.fmt.allocPrint(arena, "--filter={s}", .{value}));
+    }
+    if (env.skip) |value| {
+        try args.append(arena, try std.fmt.allocPrint(arena, "--skip={s}", .{value}));
     }
     if (env.timeout) |value| {
         try args.append(arena, try std.fmt.allocPrint(arena, "--timeout={s}", .{value}));
@@ -199,6 +207,10 @@ fn parse(argv: []const []const u8) !Parsed {
             out.flags.allow_empty_filter = true;
         } else if (try flagValue(argv, &i, arg, "--filter")) |value| {
             out.flags.filter = value;
+        } else if (try flagValue(argv, &i, arg, "--skip")) |value| {
+            out.flags.skip = value;
+        } else if (mem.eql(u8, arg, "--list")) {
+            out.flags.list = true;
         } else if (try flagValue(argv, &i, arg, "--format")) |value| {
             out.flags.format = try parseFormat(value);
         } else if (try flagValue(argv, &i, arg, "--timeout")) |value| {
@@ -384,6 +396,7 @@ pub fn main(init: process.Init) u8 {
     const args = collectArgs(arena, argv, .{
         .format = envGet(arena, environ, "TESTINGX_FORMAT"),
         .filter = envGet(arena, environ, "TESTINGX_FILTER"),
+        .skip = envGet(arena, environ, "TESTINGX_SKIP"),
         .timeout = envGet(arena, environ, "TESTINGX_TIMEOUT"),
         .fail_fast = envGet(arena, environ, "TESTINGX_FAIL_FAST"),
         .allow_empty_filter = envGet(arena, environ, "TESTINGX_ALLOW_EMPTY_FILTER"),
@@ -419,14 +432,46 @@ pub fn main(init: process.Init) u8 {
     // mistake, not a passing run.
     var selected: std.ArrayList(usize) = .empty;
     defer selected.deinit(arena);
+    var skipped_by_flag: usize = 0;
     for (builtin.test_functions, 0..) |t, test_idx| {
         if (parsed.flags.filter) |filter| {
             if (!matchesAny(filter, t.name)) continue;
         }
+        // Skip is a deliberate exclusion, so it runs after the filter and
+        // never turns a filter mismatch into a filter failure.
+        if (parsed.flags.skip) |skip| {
+            if (matchesAny(skip, t.name)) {
+                skipped_by_flag += 1;
+                continue;
+            }
+        }
         selected.append(arena, test_idx) catch |err|
             process.fatal("testingx: cannot collect tests: {t}", .{err});
     }
+
+    // The list is the selection, before anything runs. Names are the fully
+    // qualified ones the filters match, so output can feed --filter back.
+    if (parsed.flags.list) {
+        var buffer: [4096]u8 = undefined;
+        var stdout = Io.File.stdout().writerStreaming(io, &buffer);
+        for (selected.items) |test_idx| {
+            stdout.interface.print("{s}\n", .{builtin.test_functions[test_idx].name}) catch |err|
+                process.fatal("testingx: cannot write the test list: {t}", .{err});
+        }
+        stdout.interface.flush() catch |err|
+            process.fatal("testingx: cannot write the test list: {t}", .{err});
+        return 0;
+    }
+
     if (selected.items.len == 0) {
+        // Skip removed everything the filter selected: an explicit exclusion,
+        // so the empty run passes. A filter that matches nothing stays strict.
+        if (skipped_by_flag > 0) {
+            const skipped_start: Io.Clock.Timestamp = .now(io, .awake);
+            printSummary(.{}, 0, skipped_start.untilNow(io).raw);
+            print("ALL TESTS PASSED\n", .{});
+            return 0;
+        }
         // A multi-binary build forwards one set of flags to every binary, so a
         // binary with no matching test must be able to pass. The default stays
         // strict: a typo in a single-binary run still fails.
