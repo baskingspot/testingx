@@ -7,6 +7,14 @@ All notable changes to testingx are recorded here. The format follows
 
 ### Added
 
+- `--disasm PATTERN` prints the linker symbol, its address range, and the
+  disassembly of each matching benchmark, with source lines and addresses
+  stripped so two builds diff. `--cycles` adds `cycles/op`, `instructions/op`,
+  `branches/op`, and `ipc` from hardware counters (Linux, user space), and
+  `TESTINGX_BENCH_CYCLES` makes it the local default. `B.reportCounters()` is
+  the per-benchmark form, the way `B.reportAllocs()` is for allocations. `zig
+  build bench-bin` installs the binary both flags point at.
+
 - `--allow-empty-filter` and `TESTINGX_ALLOW_EMPTY_FILTER` make a filter that
   matches no tests print a zero summary and exit 0, so a build can forward one
   filter to every test binary. The default still fails.

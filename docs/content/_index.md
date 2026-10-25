@@ -144,9 +144,9 @@ mode: ReleaseFast
 BenchmarkParser/Baseline	1000	244.0 ns/op
 ```
 
-`--benchtime` takes a duration or a fixed count: `--benchtime=250ms`, `--benchtime=100x`. `--filter` selects by name, with the same grammar as the test runner. `--benchmem` adds `B/op` and `allocs/op`. `--jsonl` prints one JSON object per record instead of text.
+`--benchtime` takes a duration or a fixed count: `--benchtime=250ms`, `--benchtime=100x`. `--filter` selects by name, with the same grammar as the test runner. `--benchmem` adds `B/op` and `allocs/op`. `--cycles` adds `cycles/op`, `instructions/op`, `ipc`, and the cache and branch counts the CPU will grant (Linux, user space). `--jsonl` prints one JSON object per record instead of text.
 
-Two variables exist for CI policy, and a command-line flag wins: `TESTINGX_BENCH_FILTER` is `--filter`, and `TESTINGX_BENCH_JSONL` (`1` or `true`) is `--jsonl`.
+Three variables exist for CI policy, and a command-line flag wins: `TESTINGX_BENCH_FILTER` is `--filter`, `TESTINGX_BENCH_JSONL` (`1` or `true`) is `--jsonl`, and `TESTINGX_BENCH_CYCLES` is `--cycles`.
 
 Two captures compare with `benchstat`:
 
@@ -246,7 +246,7 @@ fn benchmarkHash(b: *testingx.B) !void {
 }
 ```
 
-`b.n` is available for a hand-written loop (`while (i < b.n) : (i += 1)`) when the body cannot use `b.loop()`. `b.allocator` counts allocations. Every allocation through it shows up in `B/op` and `allocs/op` when `--benchmem` is on. `b.reportMetric(value, "unit")` adds a custom column. `b.io` is a per-benchmark `Io.Threaded`, for file or clock work.
+`b.n` is available for a hand-written loop (`while (i < b.n) : (i += 1)`) when the body cannot use `b.loop()`. `b.allocator` counts allocations. Every allocation through it shows up in `B/op` and `allocs/op` when `--benchmem` is on. `b.reportMetric(value, "unit")` adds a custom column. `b.reportCounters()` turns counters on for that one benchmark, the per-benchmark form of `--cycles`. `b.io` is a per-benchmark `Io.Threaded`, for file or clock work.
 
 Setup that should not be measured goes before the loop, or inside `b.resetTimer()` / `b.stopTimer()` / `b.startTimer()` when it interleaves.
 

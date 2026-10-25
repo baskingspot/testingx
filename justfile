@@ -15,6 +15,20 @@ test:
 bench *ARGS:
     @zig build bench -- {{ ARGS }}
 
+[doc("Install zig-out/bin/bench: the stable path --disasm and perf record point at")]
+[group("test")]
+bench-bin:
+    zig build bench-bin
+
+[doc("Self-host check for --disasm and --cycles; counters are skipped where the PMU is absent")]
+[group("test")]
+bench-inspect:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just bench-bin
+    ./zig-out/bin/bench --disasm PlainContains | grep -q 'filter.benchmarkPlainContains'
+    ./zig-out/bin/bench --cycles --benchtime=10x > /dev/null
+
 [doc("Benchfmt end-to-end: two bench runs into files, benchstat parses and compares them")]
 [group("test")]
 bench-e2e:

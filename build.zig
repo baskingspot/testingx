@@ -156,6 +156,19 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
 
+    // A stable path for one bench binary: what `--disasm` and `perf record`
+    // point at. `zig build bench` runs from the cache, which moves.
+    const bench_bin = b.addInstallArtifact(addBenchExe(b, .{
+        .module = mod,
+        .root_source_file = b.path("benchmarks/bench.zig"),
+        .target = target,
+    }), .{});
+    const bench_bin_step = b.step(
+        "bench-bin",
+        "Install zig-out/bin/bench for disassembly and perf",
+    );
+    bench_bin_step.dependOn(&bench_bin.step);
+
     const check = b.step("check", "Compile tests and the benchmark executable without running");
     check.dependOn(&tests.step);
     check.dependOn(&addBenchExe(b, .{

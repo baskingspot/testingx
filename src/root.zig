@@ -31,6 +31,8 @@ test {
     _ = bench;
     _ = benchfmt;
     _ = filter;
+    _ = @import("perfcounter.zig");
+    _ = @import("symbols.zig");
     _ = @import("fixtures.zig");
     _ = @import("timer.zig");
 }

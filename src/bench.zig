@@ -31,8 +31,10 @@
 //! rows are comments so the result stream stays parseable. `--jsonl` is an
 //! opt-in machine-readable mode.
 //!
-//! Environment, for CI policy: TESTINGX_BENCH_FILTER (same as `--filter`)
-//! and TESTINGX_BENCH_JSONL (1 or true, same as `--jsonl`). Flags win.
+//! Environment, for CI policy: TESTINGX_BENCH_FILTER (same as `--filter`),
+//! TESTINGX_BENCH_JSONL (1 or true, same as `--jsonl`), and
+//! TESTINGX_BENCH_CYCLES (same as `--cycles`, so a shell can make counters
+//! the local default). Flags win.
 
 const std = @import("std");
 const mem = std.mem;
@@ -48,6 +50,8 @@ const builtin = @import("builtin");
 
 const benchfmt = @import("benchfmt.zig");
 const filter = @import("filter.zig");
+const perfcounter = @import("perfcounter.zig");
+const symbols = @import("symbols.zig");
 const Timer = @import("timer.zig").Timer;
 
 pub const Error = error{
@@ -68,6 +72,11 @@ pub const Options = struct {
     filter: ?[]const u8 = null,
     emit_environment: bool = true,
     jsonl: bool = false,
+    /// `--disasm`: print the linker symbol and disassembly of matching
+    /// benchmarks instead of running anything.
+    disasm: ?[]const u8 = null,
+    /// `--cycles`: read hardware counters around each timed section.
+    cycles: bool = false,
     help: bool = false,
     writer: ?*Io.Writer = null,
     /// Extra config lines from `--config`, emitted before the environment.
@@ -99,6 +108,12 @@ pub const Options = struct {
                 options.emit_environment = false;
             } else if (mem.eql(u8, arg, "--jsonl")) {
                 options.jsonl = true;
+            } else if (mem.eql(u8, arg, "--cycles")) {
+                options.cycles = true;
+            } else if (mem.eql(u8, arg, "--disasm")) {
+                options.disasm = try nextFlagValue(args);
+            } else if (mem.startsWith(u8, arg, "--disasm=")) {
+                options.disasm = arg["--disasm=".len..];
             } else if (mem.eql(u8, arg, "--count")) {
                 options.count = try std.fmt.parseInt(usize, try nextFlagValue(args), 10);
             } else if (mem.startsWith(u8, arg, "--count=")) {
@@ -187,6 +202,7 @@ pub const SliceArgs = struct {
 const EnvOptions = struct {
     filter: ?[]const u8 = null,
     jsonl: ?[]const u8 = null,
+    cycles: ?[]const u8 = null,
 };
 
 /// Build the argument list from the environment and the command line. The
@@ -204,6 +220,9 @@ fn collectArgs(
     }
     if (envBool(env.jsonl)) |on| {
         if (on) try args.append(arena, "--jsonl");
+    }
+    if (envBool(env.cycles)) |on| {
+        if (on) try args.append(arena, "--cycles");
     }
     try args.appendSlice(arena, argv[1..]);
     return args.items;
@@ -450,6 +469,9 @@ pub const B = struct {
     benchmem: bool = false,
     jsonl: bool = false,
     filter_pattern: ?[]const u8 = null,
+    counters: perfcounter.Counters = .{},
+    counters_error: ?anyerror = null,
+    counters_warned: bool = false,
     result: Result = .{},
     parallelism: usize = 1,
     previous_n: u64 = 0,
@@ -489,6 +511,7 @@ pub const B = struct {
         const combined = try collectArgs(arena, argv, .{
             .filter = envGet(arena, environ, "TESTINGX_BENCH_FILTER"),
             .jsonl = envGet(arena, environ, "TESTINGX_BENCH_JSONL"),
+            .cycles = envGet(arena, environ, "TESTINGX_BENCH_CYCLES"),
         });
         var args: SliceArgs = .{ .args = combined };
         const options = try Options.parse(arena, &args, .{});
@@ -508,6 +531,7 @@ pub const B = struct {
     }
 
     pub fn deinit(self: *B) void {
+        self.counters.close();
         freeMetricKeys(self.internal_allocator, &self.extra);
         self.extra.deinit(self.internal_allocator);
         self.result.deinit(self.internal_allocator);
@@ -592,6 +616,10 @@ pub const B = struct {
             return true;
         }
 
+        if (self.options.disasm) |pattern| {
+            return self.printDisasm(writer, pattern);
+        }
+
         const environment = try Environment.detect();
         if (self.jsonl) {
             try emitJsonHeader(writer, &self.options, &environment);
@@ -614,6 +642,16 @@ pub const B = struct {
 
                 try bench_b.run1AndMaybeLaunch();
 
+                if (bench_b.counters_error) |err| {
+                    if (!self.counters_warned) {
+                        self.counters_warned = true;
+                        if (!self.jsonl) try writer.print(
+                            "# testingx: hardware counters unavailable: {t}\n",
+                            .{err},
+                        );
+                    }
+                }
+
                 if (bench_b.has_sub) {
                     if (bench_b.failed) ok = false;
                     continue;
@@ -624,6 +662,97 @@ pub const B = struct {
             }
         }
         return ok;
+    }
+
+    /// `--disasm`: resolve each matching benchmark to the linker symbol and
+    /// hand its address range to objdump. The binary path comes from this
+    /// process's own debug info, so it always disassembles the build that ran.
+    fn printDisasm(self: *B, writer: *Io.Writer, pattern: []const u8) !bool {
+        var matched = false;
+        for (self.specs.items) |entry| {
+            if (!filterMatches(pattern, entry.name)) continue;
+            matched = true;
+
+            const target = self.resolveSymbol(entry.func) catch |err| {
+                try writer.print("Benchmark{s}: no symbol ({t})\n", .{ entry.name, err });
+                try writer.flush();
+                continue;
+            };
+
+            try writer.print("Benchmark{s}\n", .{entry.name});
+            try writer.print("  {s}  {x}..{x}  {d} bytes\n", .{
+                target.symbol.name,
+                target.symbol.address,
+                target.symbol.end(),
+                target.symbol.size,
+            });
+            try writer.flush();
+
+            try self.runObjdump(writer, target);
+        }
+
+        if (!matched) {
+            try writer.print("testingx: no benchmark matches \"{s}\"\n", .{pattern});
+            try writer.flush();
+        }
+        return matched;
+    }
+
+    const DisasmTarget = struct {
+        symbol: symbols.Symbol,
+        path: []const u8,
+    };
+
+    fn resolveSymbol(self: *B, func: Function) !DisasmTarget {
+        const info = try std.debug.getSelfDebugInfo();
+        const address = @intFromPtr(func);
+        const slide = info.getModuleSlide(self.io, address) catch 0;
+        const path = try info.getModuleName(self.io, address);
+        return .{
+            .symbol = try symbols.lookup(self.internal_allocator, self.io, path, address - slide),
+            .path = path,
+        };
+    }
+
+    fn runObjdump(self: *B, writer: *Io.Writer, target: DisasmTarget) !void {
+        const start = try std.fmt.allocPrint(
+            self.internal_allocator,
+            "--start-address=0x{x}",
+            .{target.symbol.address},
+        );
+        const stop = try std.fmt.allocPrint(
+            self.internal_allocator,
+            "--stop-address=0x{x}",
+            .{target.symbol.end()},
+        );
+        const argv = [_][]const u8{
+            "objdump", "-dS", "--no-show-raw-insn", start, stop, target.path,
+        };
+
+        var child = std.process.spawn(self.io, .{
+            .argv = &argv,
+            .stdout = .pipe,
+            .stderr = .inherit,
+        }) catch |err| {
+            try writer.print("  objdump unavailable ({t}); run:\n  ", .{err});
+            try writeCommand(writer, &argv);
+            return;
+        };
+
+        // Drain the pipe before waiting: objdump on a big function can fill it.
+        const stdout = child.stdout.?;
+        var buffer: [4096]u8 = undefined;
+        var reader = stdout.reader(self.io, &buffer);
+        const text = reader.interface.allocRemaining(self.internal_allocator, .unlimited) catch
+            try self.internal_allocator.dupe(u8, "");
+        const term = child.wait(self.io) catch |err| {
+            try writer.print("  objdump failed: {t}\n", .{err});
+            return;
+        };
+        defer stdout.close(self.io);
+        _ = term;
+
+        try writeNormalized(writer, text);
     }
 
     /// Spawn one running benchmark into `dest`, in place. `io` and
@@ -655,6 +784,11 @@ pub const B = struct {
         });
         dest.io = dest.io_instance.io();
         dest.timer = .start(dest.io);
+        if (self.options.cycles) {
+            dest.counters.open() catch |err| {
+                dest.counters_error = err;
+            };
+        }
     }
 
     /// Execute a sub-benchmark (Go's `b.Run`). Only valid inside a running
@@ -689,6 +823,9 @@ pub const B = struct {
         if (!self.timer_on) {
             self.start_allocs = self.counting_allocator.allocs();
             self.start_bytes = self.counting_allocator.bytes();
+            // Enable before the clock starts: the ioctls must not land in
+            // the window they measure.
+            self.counters.enable();
             self.timer.reset();
             self.timer_on = true;
         }
@@ -696,7 +833,12 @@ pub const B = struct {
 
     pub fn stopTimer(self: *B) void {
         if (self.timer_on) {
+            // Read the clock first, then tear the counters down, so the
+            // disable and read syscalls stay out of `t_ns`. The counts pick
+            // them up instead, which is the cheaper lie of the two.
             self.duration_ns += self.timer.read();
+            self.counters.disable();
+            self.counters.accumulate();
             self.net_allocs += self.counting_allocator.allocs() - self.start_allocs;
             self.net_bytes += self.counting_allocator.bytes() - self.start_bytes;
             self.timer_on = false;
@@ -707,6 +849,7 @@ pub const B = struct {
         self.duration_ns = 0;
         self.net_allocs = 0;
         self.net_bytes = 0;
+        self.counters.reset();
         if (self.timer_on) {
             self.start_allocs = self.counting_allocator.allocs();
             self.start_bytes = self.counting_allocator.bytes();
@@ -728,6 +871,21 @@ pub const B = struct {
 
     pub fn reportAllocs(self: *B) void {
         self.show_alloc_result = true;
+    }
+
+    /// Count hardware events for this benchmark, the per-benchmark form of
+    /// `--cycles`: the row gains `cycles/op`, `instructions/op`, `ipc`, and
+    /// whatever else the PMU granted. Counters open here, inside the timed
+    /// body, so a benchmark that asks for them pays for them whether or not
+    /// the suite passed `--cycles`. A host without a PMU reports timings
+    /// alone; requesting counters never fails a run.
+    pub fn reportCounters(self: *B) void {
+        if (self.counters.isOpen()) return;
+        self.counters.open() catch |err| {
+            self.counters_error = err;
+            return;
+        };
+        if (self.timer_on) self.counters.enable();
     }
 
     pub fn reportMetric(self: *B, n: f64, unit: []const u8) !void {
@@ -853,6 +1011,7 @@ pub const B = struct {
         };
 
         self.result.deinit(self.internal_allocator);
+        try self.recordCounters();
         self.result = .{
             .n = self.n,
             .t_ns = self.duration_ns,
@@ -861,6 +1020,26 @@ pub const B = struct {
             .mem_bytes = self.net_bytes,
             .extra = try cloneMetrics(self.internal_allocator, self.extra),
         };
+    }
+
+    /// Turn the raw counter totals into per-op units. `resetTimer` zeroed
+    /// them at the start of the timed section, so the totals cover exactly the
+    /// window `t_ns` covers.
+    fn recordCounters(self: *B) !void {
+        if (self.n == 0) return;
+
+        const n: f64 = @floatFromInt(self.n);
+        for (std.enums.values(perfcounter.Metric)) |metric| {
+            if (!self.counters.available(metric)) continue;
+            const total: f64 = @floatFromInt(self.counters.count(metric));
+            try self.reportMetric(total / n, metric.unit());
+        }
+
+        if (!self.counters.available(.cycles) or !self.counters.available(.instructions)) return;
+        const cycles = self.counters.count(.cycles);
+        if (cycles == 0) return;
+        const instructions: f64 = @floatFromInt(self.counters.count(.instructions));
+        try self.reportMetric(instructions / @as(f64, @floatFromInt(cycles)), "ipc");
     }
 
     fn loopSlowPath(self: *B) !bool {
@@ -1015,11 +1194,72 @@ pub fn printUsage(writer: *Io.Writer) !void {
         \\  --config K=V                       add config line K: V to the header (repeatable)
         \\  --jsonl                            emit JSONL records instead of benchfmt text
         \\  --no-env                           suppress environment header lines
+        \\  --cycles                           add cycles/op, instructions/op, ipc (Linux)
+        \\  --disasm P                         disassemble benchmarks matching pattern P
         \\
         \\Durations use ns, us, µs, ms, s, m, or h. Filters are comma-separated glob-like patterns:
         \\plain text contains, ^ anchors start, $ anchors end, * matches any bytes.
         \\
     );
+}
+
+/// Strip what moves between two builds: the address column, and the absolute
+/// target of a branch (the symbol printed after it does not move). Two builds
+/// of the same function then diff clean, which is the whole point.
+fn writeNormalized(writer: *Io.Writer, text: []const u8) !void {
+    var scratch: [1024]u8 = undefined;
+    var lines = mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        var out: []const u8 = line;
+        var instruction = false;
+
+        // "0000000001086a1c <filter.foo>:" -> "<filter.foo>:"
+        if (mem.findScalar(u8, line, '<')) |lt| {
+            if (isAddress(mem.trim(u8, line[0..lt], " \t"))) out = line[lt..];
+        }
+        // " 1086a1c:\tstp\tx29, x30" -> "stp\tx29, x30"
+        if (mem.findScalar(u8, out, ':')) |colon| {
+            if (isAddress(mem.trim(u8, out[0..colon], " \t"))) {
+                out = mem.trim(u8, out[colon + 1 ..], " \t");
+                instruction = true;
+            }
+        }
+        // "bl\t10864f8 <bench.B.loop>" -> "bl\t<bench.B.loop>"
+        if (mem.findScalar(u8, out, '<')) |lt| {
+            if (mem.findScalarLast(u8, out[0..lt], ' ')) |space| {
+                if (isAddress(out[space + 1 .. lt])) {
+                    const head = out[0 .. space + 1];
+                    const tail = out[lt..];
+                    if (head.len + tail.len <= scratch.len) {
+                        @memcpy(scratch[0..head.len], head);
+                        @memcpy(scratch[head.len..][0..tail.len], tail);
+                        out = scratch[0 .. head.len + tail.len];
+                    }
+                }
+            }
+        }
+
+        if (instruction) try writer.writeByte(' ');
+        try writer.writeAll(out);
+        try writer.writeByte('\n');
+    }
+}
+
+fn isAddress(token: []const u8) bool {
+    if (token.len == 0) return false;
+    const digits = if (mem.startsWith(u8, token, "0x")) token[2..] else token;
+    if (digits.len == 0) return false;
+    for (digits) |c| if (!std.ascii.isHex(c)) return false;
+    return true;
+}
+
+fn writeCommand(writer: *Io.Writer, argv: []const []const u8) !void {
+    for (argv, 0..) |arg, i| {
+        if (i != 0) try writer.writeByte(' ');
+        try writer.writeAll(arg);
+    }
+    try writer.writeByte('\n');
 }
 
 fn printBenchmarkResult(writer: *Io.Writer, name: []const u8, b: *const B, benchmem: bool) !void {
@@ -1416,6 +1656,27 @@ test "b.allocator records timed allocations" {
 }
 
 const TestArgs = std.process.Args.IteratorGeneral(.{});
+
+test "reportCounters adds counter units when the PMU allows" {
+    const bench_fn = struct {
+        fn run(b: *B) !void {
+            b.reportCounters();
+            var sink: u64 = 0;
+            defer b.keepAlive(sink);
+            while (try b.loop()) sink +%= 1;
+        }
+    }.run;
+
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
+        .benchtime = .{ .count = 1000 },
+    });
+    defer result.deinit(testing.allocator);
+
+    // No PMU, or perf_event_paranoid says no: timings only, and no failure.
+    const cycles = result.extra.get("cycles/op") orelse return;
+    try testing.expect(cycles > 0);
+    try testing.expect(result.extra.get("ipc") != null);
+}
 
 test "CLI split equal and short flags preserve options" {
     const commands = [_][]const u8{
