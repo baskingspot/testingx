@@ -21,6 +21,11 @@ const linux = std.os.linux;
 
 const is_linux = builtin.os.tag == .linux;
 
+/// Linux file descriptors are `i32`; the alias is spelled out here because
+/// `std.posix.fd_t` is a handle type on Windows, where nothing here ever
+/// touches a descriptor.
+const Fd = if (is_linux) std.posix.fd_t else i32;
+
 /// `PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING`, so a
 /// read says whether the counter was multiplexed.
 const format_time = 0b11;
@@ -67,7 +72,7 @@ const Read = extern struct {
 };
 
 pub const Counters = struct {
-    fds: [metric_count]std.posix.fd_t = @splat(-1),
+    fds: [metric_count]Fd = @splat(-1),
     /// True once the kernel has run this counter for at least one window.
     ran: [metric_count]bool = @splat(false),
     /// Counts accumulated by `accumulate`, scaled to the full window.
@@ -76,35 +81,38 @@ pub const Counters = struct {
     /// Open one counter per metric. A metric the PMU refuses is dropped, not
     /// fatal: cycles and instructions are the floor.
     pub fn open(self: *Counters) !void {
-        if (comptime !is_linux) return error.UnsupportedPlatform;
-        if (self.isOpen()) return;
-        errdefer self.close();
+        if (comptime is_linux) {
+            if (self.isOpen()) return;
+            errdefer self.close();
 
-        for (std.enums.values(Metric)) |metric| {
-            var attr: linux.perf_event_attr = .{
-                .type = .HARDWARE,
-                .config = @intFromEnum(metric.hw()),
-                .read_format = format_time,
-                .flags = .{ .disabled = true, .exclude_kernel = true, .exclude_hv = true },
-            };
-            self.fds[@intFromEnum(metric)] = std.posix.perf_event_open(
-                &attr,
-                0,
-                -1,
-                -1,
-                linux.PERF.FLAG.FD_CLOEXEC,
-            ) catch continue;
+            for (std.enums.values(Metric)) |metric| {
+                var attr: linux.perf_event_attr = .{
+                    .type = .HARDWARE,
+                    .config = @intFromEnum(metric.hw()),
+                    .read_format = format_time,
+                    .flags = .{ .disabled = true, .exclude_kernel = true, .exclude_hv = true },
+                };
+                self.fds[@intFromEnum(metric)] = std.posix.perf_event_open(
+                    &attr,
+                    0,
+                    -1,
+                    -1,
+                    linux.PERF.FLAG.FD_CLOEXEC,
+                ) catch continue;
+            }
+            if (!self.isOpen()) return error.NoCounters;
+        } else {
+            return error.UnsupportedPlatform;
         }
-        if (!self.isOpen()) return error.NoCounters;
     }
 
     pub fn close(self: *Counters) void {
-        for (&self.fds) |*fd| {
-            if (fd.* >= 0) {
-                if (comptime is_linux) _ = linux.close(fd.*);
-                fd.* = -1;
+        if (comptime is_linux) {
+            for (&self.fds) |*fd| {
+                if (fd.* >= 0) _ = linux.close(fd.*);
             }
         }
+        self.fds = @splat(-1);
         self.ran = @splat(false);
     }
 
@@ -161,9 +169,10 @@ pub const Counters = struct {
     }
 
     fn ioctlAll(self: *Counters, request: u32) void {
-        if (comptime !is_linux) return;
-        for (self.fds) |fd| {
-            if (fd >= 0) _ = linux.ioctl(fd, request, 0);
+        if (comptime is_linux) {
+            for (self.fds) |fd| {
+                if (fd >= 0) _ = linux.ioctl(fd, request, 0);
+            }
         }
     }
 };

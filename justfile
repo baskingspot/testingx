@@ -29,6 +29,12 @@ bench-inspect:
     ./zig-out/bin/bench --disasm PlainContains | grep -q 'filter.benchmarkPlainContains'
     ./zig-out/bin/bench --cycles --benchtime=10x > /dev/null
 
+[doc("Compile for the targets we claim: the runner and the bench exe must build off Linux")]
+[group("test")]
+cross:
+    zig build check -Dtarget=aarch64-macos
+    zig build check -Dtarget=x86_64-windows
+
 [doc("Benchfmt end-to-end: two bench runs into files, benchstat parses and compares them")]
 [group("test")]
 bench-e2e:
@@ -80,4 +86,4 @@ fmt:
 
 [doc("Everything CI runs: the tests and checks, lint, and the docs build")]
 [group("ci")]
-ci: test lint doc
+ci: test lint cross doc

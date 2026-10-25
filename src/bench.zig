@@ -704,14 +704,23 @@ pub const B = struct {
     };
 
     fn resolveSymbol(self: *B, func: Function) !DisasmTarget {
-        const info = try std.debug.getSelfDebugInfo();
-        const address = @intFromPtr(func);
-        const slide = info.getModuleSlide(self.io, address) catch 0;
-        const path = try info.getModuleName(self.io, address);
-        return .{
-            .symbol = try symbols.lookup(self.internal_allocator, self.io, path, address - slide),
-            .path = path,
-        };
+        // Windows debug info in Zig 0.16.0 does not compile, and objdump is not
+        // there either, so the whole body stays unanalyzed off POSIX-ELF.
+        if (comptime builtin.os.tag == .windows) {
+            return error.UnsupportedPlatform;
+        } else {
+            const info = try std.debug.getSelfDebugInfo();
+            const address = @intFromPtr(func);
+            const slide = info.getModuleSlide(self.io, address) catch 0;
+            const path = try info.getModuleName(self.io, address);
+            const symbol = try symbols.lookup(
+                self.internal_allocator,
+                self.io,
+                path,
+                address - slide,
+            );
+            return .{ .symbol = symbol, .path = path };
+        }
     }
 
     fn runObjdump(self: *B, writer: *Io.Writer, target: DisasmTarget) !void {

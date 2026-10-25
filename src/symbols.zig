@@ -118,15 +118,15 @@ fn sliceOf(
 }
 
 test "lookup finds this test binary's own symbol" {
-    if (builtin.object_format != .elf) return error.SkipZigTest;
+    if (comptime builtin.object_format == .elf) {
+        const info = std.debug.getSelfDebugInfo() catch return error.SkipZigTest;
+        const address = @intFromPtr(&lookup);
+        const slide = info.getModuleSlide(std.testing.io, address) catch return error.SkipZigTest;
+        const path = info.getModuleName(std.testing.io, address) catch return error.SkipZigTest;
 
-    const info = std.debug.getSelfDebugInfo() catch return error.SkipZigTest;
-    const address = @intFromPtr(&lookup);
-    const slide = info.getModuleSlide(std.testing.io, address) catch return error.SkipZigTest;
-    const path = info.getModuleName(std.testing.io, address) catch return error.SkipZigTest;
-
-    const symbol = try lookup(std.testing.allocator, std.testing.io, path, address - slide);
-    defer std.testing.allocator.free(symbol.name);
-    try std.testing.expect(std.mem.endsWith(u8, symbol.name, "lookup"));
-    try std.testing.expect(symbol.size > 0);
+        const symbol = try lookup(std.testing.allocator, std.testing.io, path, address - slide);
+        defer std.testing.allocator.free(symbol.name);
+        try std.testing.expect(std.mem.endsWith(u8, symbol.name, "lookup"));
+        try std.testing.expect(symbol.size > 0);
+    } else return error.SkipZigTest;
 }
