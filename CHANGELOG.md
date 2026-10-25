@@ -7,6 +7,10 @@ All notable changes to testingx are recorded here. The format follows
 
 ### Added
 
+- `std.log` lines from a test are captured and printed under that test's
+  result. A failed test shows its log, `verbose` shows logs for passes too, and
+  a quiet run stays quiet. Error logs still fail the test.
+
 - `--skip=P` removes tests from the `--filter` selection, and
   `TESTINGX_SKIP` sets it from the environment. A skip that leaves nothing to
   run passes. `--list` prints the selected fully qualified names to stdout and

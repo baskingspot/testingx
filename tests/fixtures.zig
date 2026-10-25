@@ -5,10 +5,13 @@ const std = @import("std");
 const testing = std.testing;
 
 test "basic arithmetic passes" {
+    // Captured and dropped: quiet and dots must not print a passing log.
+    std.log.info("basic arithmetic {d}", .{1 + 1});
     try testing.expect(1 + 1 == 2);
 }
 
 test "string equality passes" {
+    std.log.info("comparing {s}", .{"hello"});
     try testing.expectEqualStrings("hello", "hello");
 }
 
@@ -17,6 +20,7 @@ test "skip demonstration" {
 }
 
 test "intentional failure" {
+    std.log.info("about to fail", .{});
     try testing.expect(1 == 2);
 }
 

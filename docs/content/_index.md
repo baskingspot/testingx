@@ -220,6 +220,16 @@ A few settings also come from the environment, so a shared CI workflow can chang
 --- SKIP: skip demonstration (0.00ms)
 ```
 
+`std.log` is the way to log from a test. A line belongs to the test that emitted it: the runner holds it and prints it indented under the result when the test fails, so a passing run stays quiet and a failure carries its own context.
+
+```text
+--- FAIL: intentional failure (0.00ms)
+    [default] (info): about to fail
+    error.TestUnexpectedResult
+```
+
+`verbose` prints those lines for passing tests too. `std.log.err` fails the test, as it always has, and `debug` stays with the runner's own diagnostics. Outside a test, log lines print when they happen.
+
 ## Filters
 
 Plain text matches anywhere in the name. `^` anchors the start, `$` anchors the end, `*` matches any bytes, and commas separate alternatives.

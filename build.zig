@@ -254,6 +254,12 @@ fn addFixtureChecks(
         "=== RUN basic arithmetic passes\n--- PASS: basic arithmetic passes (",
     );
 
+    // Verbose prints the log of a passing test too; quiet and dots do not.
+    const verbose_log = addRunnerCheck(b, test_step, fixtures, 0);
+    verbose_log.addArg("--format=verbose");
+    verbose_log.addArg("--filter=string equality");
+    verbose_log.expectStdErrMatch("\n    [default] (info): comparing hello\n");
+
     const counted = addRunnerCheck(b, test_step, fixtures, 0);
     counted.addArg("--count=2");
     counted.addArg("--filter=basic arithmetic");

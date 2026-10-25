@@ -36,6 +36,9 @@
 //! Filters use the benchmark grammar: plain text contains, ^ anchors start,
 //! $ anchors end, * matches any bytes, and commas separate alternatives.
 //! Reruns happen inside each --count iteration.
+//!
+//! `std.log` inside a test is captured and printed with that test's result:
+//! always in verbose, on failure otherwise. An error log fails the test.
 
 const std = @import("std");
 const testing = std.testing;
@@ -51,6 +54,11 @@ const builtin = @import("builtin");
 
 var current_test: ?[]const u8 = null;
 var log_err_count: usize = 0;
+
+/// Log lines from the running test, printed with its result. Bounded on
+/// purpose: a test that logs past the buffer loses the tail, not the run.
+var log_buffer: [16 * 1024]u8 = undefined;
+var log_len: usize = 0;
 var run_done: std.atomic.Value(u32) = .init(0);
 threadlocal var panicking: bool = false;
 
@@ -69,12 +77,25 @@ pub fn log(
     if (@intFromEnum(message_level) <= @intFromEnum(std.log.Level.err)) {
         log_err_count +|= 1;
     }
-    if (@intFromEnum(message_level) <= @intFromEnum(testing.log_level)) {
-        print(
-            "[" ++ @tagName(scope) ++ "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n",
-            args,
-        );
+    if (@intFromEnum(message_level) > @intFromEnum(testing.log_level)) return;
+
+    // Inside a test the line belongs to that test: hold it, indented under the
+    // result, the way `t.Log` does. Outside a test it goes straight out.
+    if (current_test != null) {
+        const indented = "    [" ++ @tagName(scope) ++
+            "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n";
+        const rest = log_buffer[log_len..];
+        const written = std.fmt.bufPrint(rest, indented, args) catch {
+            log_len = log_buffer.len;
+            return;
+        };
+        log_len += written.len;
+        return;
     }
+    print(
+        "[" ++ @tagName(scope) ++ "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n",
+        args,
+    );
 }
 
 pub const panic = debug.FullPanic(struct {
@@ -631,6 +652,8 @@ const RunResult = struct {
     outcome: Outcome,
     err_name: ?[]const u8 = null,
     trace: ?[]const u8 = null,
+    /// Log lines the test emitted, already indented for the report.
+    logs: []const u8 = "",
     log_errs: usize = 0,
     leaked: bool = false,
     elapsed: Io.Duration,
@@ -671,6 +694,7 @@ fn runAttempts(options: RunOptions, test_fn: std.builtin.TestFn, name: []const u
 
 fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     current_test = friendlyName(test_fn.name);
+    log_len = 0;
     testing.allocator_instance = .{};
     // Keep test I/O allocations separate from the runner's I/O allocations.
     testing.environ = options.minimal.environ;
@@ -678,7 +702,9 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
         .argv0 = .init(options.minimal.args),
         .environ = options.minimal.environ,
     });
-    testing.log_level = .warn;
+    // Info and above are captured and shown with a failed result; debug stays
+    // with the runner's own diagnostics.
+    testing.log_level = .info;
     log_err_count = 0;
 
     const test_start: Io.Clock.Timestamp = .now(options.io, .awake);
@@ -693,20 +719,23 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     testing.io_instance.deinit();
     const leaked = testing.allocator_instance.deinit() == .leak;
     const elapsed = test_start.untilNow(options.io).raw;
+    const logs = captureLogs(options.arena);
 
     if (test_log_errs != 0) {
         return .{
             .outcome = .fail,
+            .logs = logs,
             .log_errs = test_log_errs,
             .leaked = leaked,
             .elapsed = elapsed,
         };
     }
     if (result) |_| {
-        return .{ .outcome = .pass, .leaked = leaked, .elapsed = elapsed };
+        return .{ .outcome = .pass, .logs = logs, .leaked = leaked, .elapsed = elapsed };
     } else |err| switch (err) {
         error.SkipZigTest => return .{
             .outcome = .skip,
+            .logs = logs,
             .leaked = leaked,
             .elapsed = elapsed,
         },
@@ -714,10 +743,17 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
             .outcome = .fail,
             .err_name = @errorName(err),
             .trace = if (error_trace) |tr| captureTrace(options.arena, tr) else null,
+            .logs = logs,
             .leaked = leaked,
             .elapsed = elapsed,
         },
     }
+}
+
+/// Copy the buffered lines into the run's arena and start the next test clean.
+fn captureLogs(arena: Allocator) []const u8 {
+    defer log_len = 0;
+    return arena.dupe(u8, log_buffer[0..log_len]) catch "";
 }
 
 fn failureLike(result: RunResult) bool {
@@ -805,6 +841,10 @@ fn printTestnameResult(name: []const u8, result: RunResult, plain: bool) void {
     if (failed) printFailureBody(result);
 }
 
+fn printLogLines(result: RunResult) void {
+    if (result.logs.len != 0) print("{s}", .{result.logs});
+}
+
 fn printVerboseResult(name: []const u8, result: RunResult) void {
     const failed = failureLike(result);
     const label = if (failed) "FAIL" else switch (result.outcome) {
@@ -813,7 +853,7 @@ fn printVerboseResult(name: []const u8, result: RunResult) void {
         .fail => "FAIL",
     };
     print("--- {s}: {s} ({d:.2}ms)\n", .{ label, name, elapsedMs(result.elapsed) });
-    if (failed) printFailureBody(result);
+    if (failed) printFailureBody(result) else printLogLines(result);
 }
 
 fn printFailureBlock(name: []const u8, result: RunResult) void {
@@ -822,6 +862,7 @@ fn printFailureBlock(name: []const u8, result: RunResult) void {
 }
 
 fn printFailureBody(result: RunResult) void {
+    printLogLines(result);
     if (result.err_name) |err_name| print("    error.{s}\n", .{err_name});
     if (result.trace) |trace| printIndented(trace);
     if (result.log_errs > 0) {
