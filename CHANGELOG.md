@@ -5,6 +5,8 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
 ### Added
 
 - `--artifacts=DIR` gives each test a directory for files worth keeping on
