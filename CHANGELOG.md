@@ -7,6 +7,12 @@ All notable changes to testingx are recorded here. The format follows
 
 ### Added
 
+- `--artifacts=DIR` gives each test a directory for files worth keeping on
+  failure (`TESTINGX_ARTIFACTS` sets it). `testingx.writeArtifact` writes into
+  it, the runner keeps the directory only when the test fails and prints the
+  path, and `testingx.txtar.format` writes the same archive format
+  `fixtures()` reads, so an artifact can become a fixture.
+
 - `std.log` lines from a test are captured and printed under that test's
   result. A failed test shows its log, `verbose` shows logs for passes too, and
   a quiet run stays quiet. Error logs still fail the test.

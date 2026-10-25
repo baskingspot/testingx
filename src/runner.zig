@@ -18,6 +18,7 @@
 //!   --filter=P          only tests whose name matches P; a filter that matches nothing fails
 //!   --skip=P            drop tests whose name matches P after --filter selects
 //!   --list              print the selected names, one per line, to stdout and exit 0
+//!   --artifacts=DIR     give each test DIR/<name>/ for files it wants kept on failure
 //!   --allow-empty-filter  a filter that matches nothing prints a zero summary and exits 0
 //!   --format=NAME       quiet, dots, testname, or verbose (default: dots on a terminal)
 //!   --timeout=D         stop after D like 500ms or 10m (default 10m, off or 0 disables)
@@ -30,7 +31,8 @@
 //!
 //! Environment, for CI policy that a shared workflow sets without editing the
 //! repository: TESTINGX_FORMAT, TESTINGX_FILTER, TESTINGX_SKIP,
-//! TESTINGX_TIMEOUT, TESTINGX_FAIL_FAST, TESTINGX_ALLOW_EMPTY_FILTER, and
+//! TESTINGX_ARTIFACTS, TESTINGX_TIMEOUT, TESTINGX_FAIL_FAST,
+//! TESTINGX_ALLOW_EMPTY_FILTER, and
 //! NO_COLOR. Command-line flags win over all of them.
 //!
 //! Filters use the benchmark grammar: plain text contains, ^ anchors start,
@@ -135,6 +137,8 @@ const Flags = struct {
     filter: ?[]const u8 = null,
     skip: ?[]const u8 = null,
     list: bool = false,
+    /// Root for per-test artifact directories. Null means no artifacts.
+    artifacts: ?[]const u8 = null,
     allow_empty_filter: bool = false,
     /// Nanoseconds. Null disables the watchdog.
     timeout_ns: ?u64 = 10 * time.ns_per_min,
@@ -155,6 +159,7 @@ const EnvOptions = struct {
     format: ?[]const u8 = null,
     filter: ?[]const u8 = null,
     skip: ?[]const u8 = null,
+    artifacts: ?[]const u8 = null,
     timeout: ?[]const u8 = null,
     fail_fast: ?[]const u8 = null,
     allow_empty_filter: ?[]const u8 = null,
@@ -179,6 +184,9 @@ fn collectArgs(
     }
     if (env.skip) |value| {
         try args.append(arena, try std.fmt.allocPrint(arena, "--skip={s}", .{value}));
+    }
+    if (env.artifacts) |value| {
+        try args.append(arena, try std.fmt.allocPrint(arena, "--artifacts={s}", .{value}));
     }
     if (env.timeout) |value| {
         try args.append(arena, try std.fmt.allocPrint(arena, "--timeout={s}", .{value}));
@@ -232,6 +240,8 @@ fn parse(argv: []const []const u8) !Parsed {
             out.flags.skip = value;
         } else if (mem.eql(u8, arg, "--list")) {
             out.flags.list = true;
+        } else if (try flagValue(argv, &i, arg, "--artifacts")) |value| {
+            out.flags.artifacts = value;
         } else if (try flagValue(argv, &i, arg, "--format")) |value| {
             out.flags.format = try parseFormat(value);
         } else if (try flagValue(argv, &i, arg, "--timeout")) |value| {
@@ -418,6 +428,7 @@ pub fn main(init: process.Init) u8 {
         .format = envGet(arena, environ, "TESTINGX_FORMAT"),
         .filter = envGet(arena, environ, "TESTINGX_FILTER"),
         .skip = envGet(arena, environ, "TESTINGX_SKIP"),
+        .artifacts = envGet(arena, environ, "TESTINGX_ARTIFACTS"),
         .timeout = envGet(arena, environ, "TESTINGX_TIMEOUT"),
         .fail_fast = envGet(arena, environ, "TESTINGX_FAIL_FAST"),
         .allow_empty_filter = envGet(arena, environ, "TESTINGX_ALLOW_EMPTY_FILTER"),
@@ -561,6 +572,7 @@ pub fn main(init: process.Init) u8 {
                 .format = format,
                 .plain = plain,
                 .rerun_fails = parsed.flags.rerun_fails,
+                .artifacts = parsed.flags.artifacts,
             }, test_fn, name);
 
             ran[test_idx] = true;
@@ -654,6 +666,8 @@ const RunResult = struct {
     trace: ?[]const u8 = null,
     /// Log lines the test emitted, already indented for the report.
     logs: []const u8 = "",
+    /// Directory of files the test asked to keep, when it failed.
+    artifacts: ?[]const u8 = null,
     log_errs: usize = 0,
     leaked: bool = false,
     elapsed: Io.Duration,
@@ -671,6 +685,7 @@ const RunOptions = struct {
     format: Format,
     plain: bool,
     rerun_fails: usize,
+    artifacts: ?[]const u8,
 };
 
 fn runAttempts(options: RunOptions, test_fn: std.builtin.TestFn, name: []const u8) Attempts {
@@ -707,6 +722,17 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     testing.log_level = .info;
     log_err_count = 0;
 
+    const artifact_path = prepareArtifacts(options, test_fn.name);
+    if (artifact_path) |path| {
+        const injected = withEnvironment(
+            options.arena,
+            options.minimal.environ,
+            "TESTINGX_ARTIFACT_DIR",
+            path,
+        );
+        if (injected) |env| testing.environ = env;
+    }
+
     const test_start: Io.Clock.Timestamp = .now(options.io, .awake);
     // Do not include errors from earlier tests in this test's trace.
     if (@errorReturnTrace()) |trace| trace.index = 0;
@@ -720,22 +746,34 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     const leaked = testing.allocator_instance.deinit() == .leak;
     const elapsed = test_start.untilNow(options.io).raw;
     const logs = captureLogs(options.arena);
+    testing.environ = options.minimal.environ;
+    const failed = test_log_errs != 0 or leaked or
+        (if (result) |_| false else |err| err != error.SkipZigTest);
+    const artifacts = finishArtifacts(options, artifact_path, failed);
 
     if (test_log_errs != 0) {
         return .{
             .outcome = .fail,
             .logs = logs,
+            .artifacts = artifacts,
             .log_errs = test_log_errs,
             .leaked = leaked,
             .elapsed = elapsed,
         };
     }
     if (result) |_| {
-        return .{ .outcome = .pass, .logs = logs, .leaked = leaked, .elapsed = elapsed };
+        return .{
+            .outcome = .pass,
+            .logs = logs,
+            .artifacts = artifacts,
+            .leaked = leaked,
+            .elapsed = elapsed,
+        };
     } else |err| switch (err) {
         error.SkipZigTest => return .{
             .outcome = .skip,
             .logs = logs,
+            .artifacts = artifacts,
             .leaked = leaked,
             .elapsed = elapsed,
         },
@@ -744,6 +782,7 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
             .err_name = @errorName(err),
             .trace = if (error_trace) |tr| captureTrace(options.arena, tr) else null,
             .logs = logs,
+            .artifacts = artifacts,
             .leaked = leaked,
             .elapsed = elapsed,
         },
@@ -754,6 +793,66 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
 fn captureLogs(arena: Allocator) []const u8 {
     defer log_len = 0;
     return arena.dupe(u8, log_buffer[0..log_len]) catch "";
+}
+
+/// Where this test may write files. The directory is created by the library
+/// only when the test asks for it, so a suite that never asks pays one
+/// `deleteTree` call.
+fn prepareArtifacts(options: RunOptions, test_name: []const u8) ?[]const u8 {
+    const root = options.artifacts orelse return null;
+    const safe = sanitizeArtifactName(options.arena, test_name) catch return null;
+    const path = Io.Dir.path.join(options.arena, &.{ root, safe }) catch return null;
+    // A failed earlier run may have left this test's directory behind.
+    removeArtifacts(options, path);
+    return path;
+}
+
+/// Keep the directory when the test failed, drop it when it passed.
+fn finishArtifacts(options: RunOptions, path: ?[]const u8, keep: bool) ?[]const u8 {
+    const dir = path orelse return null;
+    _ = Io.Dir.cwd().statFile(options.io, dir, .{}) catch return null;
+    if (keep) return dir;
+    removeArtifacts(options, dir);
+    return null;
+}
+
+/// Cleanup is best effort: a stale tree must never fail a test. The reason is
+/// worth a line in verbose output and nowhere else.
+fn removeArtifacts(options: RunOptions, path: []const u8) void {
+    Io.Dir.cwd().deleteTree(options.io, path) catch |err| {
+        if (options.format == .verbose) {
+            print("artifacts: cannot remove {s}: {t}\n", .{ path, err });
+        }
+    };
+}
+
+fn sanitizeArtifactName(arena: Allocator, name: []const u8) ![]const u8 {
+    const out = try arena.alloc(u8, name.len);
+    for (name, 0..) |c, i| {
+        out[i] = if (ascii.isAlphanumeric(c) or c == '.' or c == '-' or c == '_') c else '_';
+    }
+    return out;
+}
+
+/// The runner and the test module share no globals except `std.testing`, so a
+/// per-test value rides on `testing.environ`, which the test already reads for
+/// its own configuration. Windows carries its environment block in UTF-16 and
+/// is not wired yet, so artifacts stay off there.
+fn withEnvironment(
+    arena: Allocator,
+    base: process.Environ,
+    key: []const u8,
+    value: []const u8,
+) ?process.Environ {
+    if (comptime builtin.os.tag == .windows) {
+        return null;
+    } else {
+        var map = process.Environ.Map.init(arena);
+        map.putPosixBlock(base.block.view()) catch return null;
+        map.put(key, value) catch return null;
+        const block = map.createPosixBlock(arena, .{}) catch return null;
+        return .{ .block = block };
+    }
 }
 
 fn failureLike(result: RunResult) bool {
@@ -871,6 +970,7 @@ fn printFailureBody(result: RunResult) void {
         });
     }
     if (result.leaked) print("    memory leak detected\n", .{});
+    if (result.artifacts) |path| print("    artifacts: {s}\n", .{path});
 }
 
 fn printIndented(text: []const u8) void {

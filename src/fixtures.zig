@@ -10,12 +10,8 @@ const Base64Decoder = std.base64.standard.Decoder;
 
 const txtar = @import("txtar.zig");
 
-pub const Fixture = struct {
-    /// The marker name.
-    name: []const u8,
-    /// The section text, without decoding.
-    text: []const u8,
-};
+/// One archive section. The same type `txtar.format` writes.
+pub const Fixture = txtar.File;
 
 /// An embedded txtar archive, read at comptime.
 ///

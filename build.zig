@@ -87,6 +87,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/fixtures.zig"),
             .target = target,
+            .imports = &.{.{ .name = "testingx", .module = mod }},
         }),
         .test_runner = .{ .path = b.path("src/runner.zig"), .mode = .simple },
     });
@@ -221,6 +222,34 @@ fn addFixtureChecks(
     skipped_all.addArg("--filter=fuzz");
     skipped_all.addArg("--skip=fuzz");
     skipped_all.expectStdErrMatch("0 passed, 0 failed, 0 skipped (of 0 total)");
+
+    // Artifacts: a failed test keeps its directory and the failure names it,
+    // a passing test's directory is deleted.
+    const artifacts = addRunnerCheck(b, test_step, fixtures, 1);
+    artifacts.addArg("--filter=intentional failure");
+    artifacts.addArg("--artifacts=zig-out/test-artifacts");
+    artifacts.expectStdErrMatch(
+        "    artifacts: zig-out/test-artifacts/fixtures.test.intentional_failure\n",
+    );
+
+    const artifact_file = b.addSystemCommand(&.{
+        "cat",
+        "zig-out/test-artifacts/fixtures.test.intentional_failure/output.txt",
+    });
+    artifact_file.step.dependOn(&artifacts.step);
+    artifact_file.expectStdOutEqual("hello from the failure\n");
+    test_step.dependOn(&artifact_file.step);
+
+    const passing_artifacts = addRunnerCheck(b, test_step, fixtures, 0);
+    passing_artifacts.addArg("--filter=string equality");
+    passing_artifacts.addArg("--artifacts=zig-out/test-artifacts");
+    const artifact_gone = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        "test ! -d zig-out/test-artifacts/fixtures.test.string_equality_passes",
+    });
+    artifact_gone.step.dependOn(&passing_artifacts.step);
+    test_step.dependOn(&artifact_gone.step);
 
     const dots = addRunnerCheck(b, test_step, fixtures, 0);
     dots.addArg("--filter=basic arithmetic");

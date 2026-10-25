@@ -172,6 +172,7 @@ zig build test -- --format=testname --filter=^fixtures.test.skip demonstration$
 | `--filter=P`           | none                           | Run tests whose name matches P. A filter that matches nothing fails the run.   |
 | `--skip=P`             | none                           | Drop tests whose name matches P, after `--filter` has selected                 |
 | `--list`               | off                            | Print the selected test names to stdout and run nothing                        |
+| `--artifacts=DIR`      | off                            | Give each test `DIR/<name>/` for files worth keeping when it fails             |
 | `--allow-empty-filter` | off                            | A filter that matches nothing prints a zero summary and passes                 |
 | `--seed=N`             | build seed                     | Random seed, printed in the summary                                            |
 | `--timeout=D`          | `10m`                          | Stop after D (`500ms`, `10m`); `off` disables. Names the test it was stuck in. |
@@ -191,6 +192,7 @@ A few settings also come from the environment, so a shared CI workflow can chang
 | `TESTINGX_FORMAT`             | `--format`                               |
 | `TESTINGX_FILTER`             | `--filter`                               |
 | `TESTINGX_SKIP`               | `--skip`                                 |
+| `TESTINGX_ARTIFACTS`          | `--artifacts`                            |
 | `TESTINGX_TIMEOUT`            | `--timeout`                              |
 | `TESTINGX_FAIL_FAST`          | `--fail-fast` (`1` or `true`)            |
 | `TESTINGX_ALLOW_EMPTY_FILTER` | `--allow-empty-filter` (`1` or `true`)   |
@@ -363,6 +365,30 @@ xxd -p frame.bin > frame.hex
 ```
 
 The `.b64` and `.hex` suffixes are a convention for humans; the helpers only see the text. One blob does not need an archive, and an archive of plain text sections does not need either decoder.
+
+# Artifacts
+
+A test can leave files behind for the person reading a failure. `--artifacts=DIR` gives every test a directory at `DIR/<test name>/`, created when the test asks for it:
+
+```zig
+const archive = try testingx.txtar.format(testing.allocator, "roundtrip", &.{
+    .{ .name = "input", .text = input },
+    .{ .name = "output", .text = output },
+});
+defer testing.allocator.free(archive);
+try testingx.writeArtifact(testing.allocator, "roundtrip.txtar", archive);
+```
+
+The runner keeps the directory when the test fails and names it under the failure:
+
+```text
+--- FAIL: roundtrip (0.00ms)
+    artifacts: zig-out/artifacts/parser.test.roundtrip
+```
+
+A passing test's directory is deleted, so the tree holds only failures from the last run. Without `--artifacts`, `artifactDir` returns null and `writeArtifact` writes nothing, so the same test runs unchanged anywhere.
+
+`txtar.format` writes what `fixtures()` reads. An artifact worth keeping becomes a fixture by copying it into the test's archive file and rebuilding; the fixture stays text in the repository.
 
 # For library authors
 

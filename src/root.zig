@@ -20,6 +20,11 @@ pub const benchMain = bench.benchMain;
 pub const filter = @import("filter.zig");
 pub const Timer = @import("timer.zig").Timer;
 
+pub const artifacts = @import("artifacts.zig");
+pub const artifactDir = artifacts.artifactDir;
+pub const writeArtifact = artifacts.writeArtifact;
+pub const txtar = @import("txtar.zig");
+
 pub const fixtures = @import("fixtures.zig").fixtures;
 pub const b64 = @import("fixtures.zig").b64;
 pub const hex = @import("fixtures.zig").hex;
@@ -33,6 +38,8 @@ test {
     _ = filter;
     _ = @import("perfcounter.zig");
     _ = @import("symbols.zig");
+    _ = @import("artifacts.zig");
+    _ = @import("txtar.zig");
     _ = @import("fixtures.zig");
     _ = @import("timer.zig");
 }

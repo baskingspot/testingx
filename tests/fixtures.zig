@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const testing = std.testing;
+const testingx = @import("testingx");
 
 test "basic arithmetic passes" {
     // Captured and dropped: quiet and dots must not print a passing log.
@@ -12,6 +13,8 @@ test "basic arithmetic passes" {
 
 test "string equality passes" {
     std.log.info("comparing {s}", .{"hello"});
+    // Written, then deleted: the test passes.
+    try testingx.writeArtifact(testing.allocator, "output.txt", "discarded\n");
     try testing.expectEqualStrings("hello", "hello");
 }
 
@@ -21,6 +24,8 @@ test "skip demonstration" {
 
 test "intentional failure" {
     std.log.info("about to fail", .{});
+    // Kept only when the runner was asked for artifacts.
+    try testingx.writeArtifact(testing.allocator, "output.txt", "hello from the failure\n");
     try testing.expect(1 == 2);
 }
 

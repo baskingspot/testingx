@@ -1,12 +1,14 @@
-//! Compile-time txtar parsing.
+//! Compile-time txtar parsing, and one runtime writer for artifacts.
 //!
 //! The grammar matches mattrobenolt/txtar: a comment, then `-- name --`
-//! markers with section text between them. This module reads only. The
-//! standalone txtar library owns writing, formatting, and streaming.
+//! markers with section text between them. `parse` runs at comptime; `format`
+//! is the inverse at runtime, so a test can dump an archive that `fixtures()`
+//! reads back after it is checked in.
 
 const std = @import("std");
 const testing = std.testing;
 const mem = std.mem;
+const Allocator = mem.Allocator;
 
 pub const File = struct {
     /// The marker name, trimmed.
@@ -14,6 +16,87 @@ pub const File = struct {
     /// Section text. A final line without a newline gains one, as in txtar.
     text: []const u8,
 };
+
+pub const FormatError = error{
+    InvalidName,
+    OutOfMemory,
+};
+
+/// Format `files` as a txtar archive. The result is owned by `allocator`.
+///
+/// `parse` reads this back. Section text that does not end in a newline gains
+/// one, matching what the parser does on the way in, so a round trip is stable.
+pub fn format(
+    allocator: Allocator,
+    comment: []const u8,
+    files: []const File,
+) FormatError![]u8 {
+    var buffer: std.Io.Writer.Allocating = .init(allocator);
+    errdefer buffer.deinit();
+    const writer = &buffer.writer;
+
+    if (comment.len > 0) {
+        writer.writeAll(comment) catch return error.OutOfMemory;
+        if (!mem.endsWith(u8, comment, "\n")) writer.writeByte('\n') catch return error.OutOfMemory;
+    }
+
+    for (files) |file| {
+        if (!validEntryName(file.name)) return error.InvalidName;
+        writer.print("-- {s} --\n", .{file.name}) catch return error.OutOfMemory;
+        writer.writeAll(file.text) catch return error.OutOfMemory;
+        if (file.text.len > 0 and !mem.endsWith(u8, file.text, "\n")) {
+            writer.writeByte('\n') catch return error.OutOfMemory;
+        }
+    }
+
+    return buffer.toOwnedSlice() catch return error.OutOfMemory;
+}
+
+/// A name the marker line can carry and the parser can trim back to itself.
+fn validEntryName(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (mem.trim(u8, name, &std.ascii.whitespace).len != name.len) return false;
+    for (name) |c| if (c == '\n' or c == '\r') return false;
+    return true;
+}
+
+test "format writes the markers parse reads" {
+    const text = try format(testing.allocator, "example archive", &.{
+        .{ .name = "input", .text = "hello" },
+        .{ .name = "output", .text = "world\n" },
+    });
+    defer testing.allocator.free(text);
+
+    try testing.expectEqualStrings(
+        \\example archive
+        \\-- input --
+        \\hello
+        \\-- output --
+        \\world
+        \\
+    , text);
+
+    // Every marker in the output parses back to the name that wrote it.
+    var markers: usize = 0;
+    var lines = mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| if (markerName(line)) |name| {
+        markers += 1;
+        try testing.expect(validEntryName(name));
+    };
+    try testing.expectEqual(@as(usize, 2), markers);
+}
+
+test "format rejects a name it cannot write" {
+    try testing.expectError(error.InvalidName, format(testing.allocator, "", &.{
+        .{ .name = "bad\nname", .text = "x" },
+    }));
+    try testing.expectError(error.InvalidName, format(testing.allocator, "", &.{
+        .{ .name = " bad ", .text = "x" },
+    }));
+    try testing.expectError(error.InvalidName, format(testing.allocator, "", &.{
+        .{ .name = "", .text = "x" },
+    }));
+}
 
 pub fn Parse(comptime n: usize) type {
     return struct {
