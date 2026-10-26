@@ -12,6 +12,7 @@ All of it is one dependency and needs Zig 0.16.
 - [Test runner flags](#test-runner-flags): formats, filtering, timeouts, flake hunting.
 - [Writing benchmarks](#writing-benchmarks): the loop, sub-benchmarks, names, and output.
 - [Embedded fixtures](#embedded-fixtures): base64 and hex blobs, and txtar archives, read at comptime.
+- [Artifacts](#artifacts): `--artifacts=DIR` gives each test a directory for the files worth keeping when it fails.
 - [For library authors](#for-library-authors): keep the runner and benchmarks out of your consumers' builds.
 - [Limits](#limits): what the language does not allow this runner to do.
 

@@ -15,6 +15,7 @@ Zig's built-in test runner draws a progress display and speaks a binary protocol
 - [Test runner flags](https://baskingspot.dev/testingx/#test-runner-flags): `--format`, `--filter`, `--timeout`, `--count`, `--rerun-fails`, `--shuffle`, and `--slowest`. A wrong filter fails instead of passing silently; `--allow-empty-filter` relaxes that for multi-binary builds.
 - [Writing benchmarks](https://baskingspot.dev/testingx/#writing-benchmarks): `b.loop()`, `defer b.keepAlive(sink)`, `b.setBytes`, `b.reportMetric`, and `b.run` for sub-benchmarks. Names use benchfmt parts, so benchstat groups a matrix.
 - [Embedded fixtures](https://baskingspot.dev/testingx/#embedded-fixtures): `testingx.b64` and `testingx.hex` decode one embedded file, and `testingx.fixtures` reads a txtar archive by name at compile time.
+- [Artifacts](https://baskingspot.dev/testingx/#artifacts): `--artifacts=DIR` gives each test a directory of files worth keeping when it fails, and deletes it when the test passes.
 - [For library authors](https://baskingspot.dev/testingx/#for-library-authors): `.lazy = true` plus `if (b.pkg_hash.len != 0) return;` keeps the runner and benchmarks out of a consumer's build.
 - [Limits](https://baskingspot.dev/testingx/#limits): what the compiler does not allow, such as parallel tests and subtests.
 
