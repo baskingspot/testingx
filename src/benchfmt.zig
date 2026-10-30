@@ -224,16 +224,23 @@ pub const Record = union(enum) {
 pub const Reader = struct {
     allocator: Allocator,
     input: []const u8,
-    offset: usize = 0,
-    line: usize = 0,
+    offset: usize,
+    line: usize,
     /// Configuration accumulated from every config line read so far.
-    config: ConfigMap = .empty,
-    values: std.ArrayList(Value) = .empty,
+    config: ConfigMap,
+    values: std.ArrayList(Value),
 
     pub const ConfigMap = std.array_hash_map.String([]const u8);
 
     pub fn init(allocator: Allocator, input: []const u8) Reader {
-        return .{ .allocator = allocator, .input = input };
+        return .{
+            .allocator = allocator,
+            .input = input,
+            .offset = 0,
+            .line = 0,
+            .config = .empty,
+            .values = .empty,
+        };
     }
 
     pub fn deinit(self: *Reader) void {

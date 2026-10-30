@@ -64,24 +64,42 @@ pub const Error = error{
     InvalidPhase,
 };
 
+/// The flags, as parsed by `benchMain` or built by a test.
 pub const Options = struct {
-    benchtime: DurationOrCount = .{ .duration_ns = time.ns_per_s },
-    benchmem: bool = false,
-    count: usize = 1,
-    parallelism: usize = 1,
-    filter: ?[]const u8 = null,
-    emit_environment: bool = true,
-    jsonl: bool = false,
+    benchtime: DurationOrCount,
+    benchmem: bool,
+    count: usize,
+    parallelism: usize,
+    filter: ?[]const u8,
+    emit_environment: bool,
+    jsonl: bool,
     /// `--disasm`: print the linker symbol and disassembly of matching
     /// benchmarks instead of running anything.
-    disasm: ?[]const u8 = null,
+    disasm: ?[]const u8,
     /// `--cycles`: read hardware counters around each timed section.
-    cycles: bool = false,
-    help: bool = false,
-    writer: ?*Io.Writer = null,
+    cycles: bool,
+    help: bool,
+    writer: ?*Io.Writer,
     /// Extra config lines from `--config`, emitted before the environment.
     /// The list and its values are owned by this Options.
-    config: std.ArrayList(benchfmt.Config) = .empty,
+    config: std.ArrayList(benchfmt.Config),
+
+    /// One second per benchmark, one iteration, no filter, the environment
+    /// header on, and no config entries.
+    pub const init: Options = .{
+        .benchtime = .{ .duration_ns = time.ns_per_s },
+        .benchmem = false,
+        .count = 1,
+        .parallelism = 1,
+        .filter = null,
+        .emit_environment = true,
+        .jsonl = false,
+        .disasm = null,
+        .cycles = false,
+        .help = false,
+        .writer = null,
+        .config = .empty,
+    };
 
     pub fn deinit(self: *Options, allocator: Allocator) void {
         for (self.config.items) |entry| allocator.free(entry.value);
@@ -185,7 +203,12 @@ fn shortFlagValue(arg: []const u8, flag: []const u8, args: anytype) !?[]const u8
 /// Arguments as a slice: the process main already has one in hand.
 pub const SliceArgs = struct {
     args: []const []const u8,
-    i: usize = 1, // skip argv[0]
+    i: usize,
+
+    /// An iterator positioned after argv[0].
+    pub fn init(args: []const []const u8) SliceArgs {
+        return .{ .args = args, .i = 1 };
+    }
 
     pub fn skip(self: *SliceArgs) void {
         self.i = 1;
@@ -267,12 +290,22 @@ pub const Spec = struct {
 };
 
 pub const Result = struct {
-    n: u64 = 0,
-    t_ns: u64 = 0,
-    bytes: i64 = 0,
-    mem_allocs: u64 = 0,
-    mem_bytes: u64 = 0,
-    extra: MetricMap = .empty,
+    n: u64,
+    t_ns: u64,
+    bytes: i64,
+    mem_allocs: u64,
+    mem_bytes: u64,
+    extra: MetricMap,
+
+    /// Nothing measured: no iterations, time, bytes, allocations, or metrics.
+    pub const zero: Result = .{
+        .n = 0,
+        .t_ns = 0,
+        .bytes = 0,
+        .mem_allocs = 0,
+        .mem_bytes = 0,
+        .extra = .empty,
+    };
 
     pub fn deinit(self: *Result, allocator: Allocator) void {
         freeMetricKeys(allocator, &self.extra);
@@ -351,11 +384,15 @@ const MetricMap = std.array_hash_map.String(f64);
 
 pub const CountingAllocator = struct {
     child: Allocator,
-    total_allocs: atomic.Value(u64) = .init(0),
-    total_bytes: atomic.Value(u64) = .init(0),
+    total_allocs: atomic.Value(u64),
+    total_bytes: atomic.Value(u64),
 
     pub fn init(child: Allocator) CountingAllocator {
-        return .{ .child = child };
+        return .{
+            .child = child,
+            .total_allocs = .init(0),
+            .total_bytes = .init(0),
+        };
     }
 
     pub fn allocator(self: *CountingAllocator) Allocator {
@@ -439,47 +476,47 @@ pub const B = struct {
     /// a fresh `Io.Threaded` per benchmark, on the same counting allocator
     /// as `allocator`, so its allocations are counted).
     io: Io,
-    io_instance: Io.Threaded = undefined,
-    argv0: Io.Threaded.Argv0 = .empty,
-    environ: std.process.Environ = .empty,
-    options: Options = .{},
-    specs: std.ArrayList(Spec) = .empty,
-    writer: ?*Io.Writer = null,
-    stdout_buf: [4096]u8 = undefined,
-    stdout: Io.File.Writer = undefined,
-    executing: bool = false,
-    allocator: Allocator = undefined,
-    counting_allocator: CountingAllocator = undefined,
-    name: []const u8 = "",
-    n: u64 = 0,
-    failed: bool = false,
-    skipped: bool = false,
+    io_instance: Io.Threaded,
+    argv0: Io.Threaded.Argv0,
+    environ: std.process.Environ,
+    options: Options,
+    specs: std.ArrayList(Spec),
+    writer: ?*Io.Writer,
+    stdout_buf: [4096]u8,
+    stdout: Io.File.Writer,
+    executing: bool,
+    allocator: Allocator,
+    counting_allocator: CountingAllocator,
+    name: []const u8,
+    n: u64,
+    failed: bool,
+    skipped: bool,
 
-    bench_func: ?Function = null,
-    bench_time: DurationOrCount = .{ .duration_ns = time.ns_per_s },
-    bytes: i64 = 0,
-    timer: Timer = undefined,
-    timer_on: bool = false,
-    duration_ns: u64 = 0,
-    start_allocs: u64 = 0,
-    start_bytes: u64 = 0,
-    net_allocs: u64 = 0,
-    net_bytes: u64 = 0,
-    show_alloc_result: bool = false,
-    benchmem: bool = false,
-    jsonl: bool = false,
-    filter_pattern: ?[]const u8 = null,
-    counters: perfcounter.Counters = .{},
-    counters_error: ?anyerror = null,
-    counters_warned: bool = false,
-    result: Result = .{},
-    parallelism: usize = 1,
-    previous_n: u64 = 0,
-    previous_duration_ns: u64 = 0,
-    loop_state: LoopState = .{},
-    has_sub: bool = false,
-    missing_bytes: bool = false,
-    extra: MetricMap = .empty,
+    bench_func: ?Function,
+    bench_time: DurationOrCount,
+    bytes: i64,
+    timer: Timer,
+    timer_on: bool,
+    duration_ns: u64,
+    start_allocs: u64,
+    start_bytes: u64,
+    net_allocs: u64,
+    net_bytes: u64,
+    show_alloc_result: bool,
+    benchmem: bool,
+    jsonl: bool,
+    filter_pattern: ?[]const u8,
+    counters: perfcounter.Counters,
+    counters_error: ?anyerror,
+    counters_warned: bool,
+    result: Result,
+    parallelism: usize,
+    previous_n: u64,
+    previous_duration_ns: u64,
+    loop_state: LoopState,
+    has_sub: bool,
+    missing_bytes: bool,
+    extra: MetricMap,
 
     const LoopState = struct {
         n: u64 = 0,
@@ -487,20 +524,70 @@ pub const B = struct {
         done: bool = false,
     };
 
+    /// Every field at its zero value. `init`, `initProcess`, and `spawn` then
+    /// fill in the fields that carry state, so a B never comes from a bare
+    /// literal.
+    fn blank() B {
+        return .{
+            .internal_allocator = undefined,
+            .io = undefined,
+            .io_instance = undefined,
+            .argv0 = .empty,
+            .environ = .empty,
+            .options = .init,
+            .specs = .empty,
+            .writer = null,
+            .stdout_buf = undefined,
+            .stdout = undefined,
+            .executing = false,
+            .allocator = undefined,
+            .counting_allocator = undefined,
+            .name = "",
+            .n = 0,
+            .failed = false,
+            .skipped = false,
+            .bench_func = null,
+            .bench_time = .{ .duration_ns = time.ns_per_s },
+            .bytes = 0,
+            .timer = undefined,
+            .timer_on = false,
+            .duration_ns = 0,
+            .start_allocs = 0,
+            .start_bytes = 0,
+            .net_allocs = 0,
+            .net_bytes = 0,
+            .show_alloc_result = false,
+            .benchmem = false,
+            .jsonl = false,
+            .filter_pattern = null,
+            .counters = .empty,
+            .counters_error = null,
+            .counters_warned = false,
+            .result = .zero,
+            .parallelism = 1,
+            .previous_n = 0,
+            .previous_duration_ns = 0,
+            .loop_state = .{},
+            .has_sub = false,
+            .missing_bytes = false,
+            .extra = .empty,
+        };
+    }
+
     /// Create a suite for registration. `io` is required: everything here
     /// does I/O and refuses to guess.
     pub fn init(allocator: Allocator, io: Io, options: Options) B {
-        return .{
-            .internal_allocator = allocator,
-            .io = io,
-            .options = options,
-            .bench_time = options.benchtime,
-            .benchmem = options.benchmem,
-            .jsonl = options.jsonl,
-            .parallelism = options.parallelism,
-            .filter_pattern = options.filter,
-            .writer = options.writer,
-        };
+        var b = blank();
+        b.internal_allocator = allocator;
+        b.io = io;
+        b.options = options;
+        b.bench_time = options.benchtime;
+        b.benchmem = options.benchmem;
+        b.jsonl = options.jsonl;
+        b.parallelism = options.parallelism;
+        b.filter_pattern = options.filter;
+        b.writer = options.writer;
+        return b;
     }
 
     /// Create a suite from a process entry: parses flags from argv.
@@ -513,21 +600,21 @@ pub const B = struct {
             .jsonl = envGet(arena, environ, "TESTINGX_BENCH_JSONL"),
             .cycles = envGet(arena, environ, "TESTINGX_BENCH_CYCLES"),
         });
-        var args: SliceArgs = .{ .args = combined };
-        const options = try Options.parse(arena, &args, .{});
-        return .{
-            .internal_allocator = arena,
-            .io = entry.io,
-            .argv0 = .init(entry.minimal.args),
-            .environ = entry.minimal.environ,
-            .options = options,
-            .bench_time = options.benchtime,
-            .benchmem = options.benchmem,
-            .jsonl = options.jsonl,
-            .parallelism = options.parallelism,
-            .filter_pattern = options.filter,
-            .writer = options.writer,
-        };
+        var args = SliceArgs.init(combined);
+        const options = try Options.parse(arena, &args, .init);
+        var b = blank();
+        b.internal_allocator = arena;
+        b.io = entry.io;
+        b.argv0 = .init(entry.minimal.args);
+        b.environ = entry.minimal.environ;
+        b.options = options;
+        b.bench_time = options.benchtime;
+        b.benchmem = options.benchmem;
+        b.jsonl = options.jsonl;
+        b.parallelism = options.parallelism;
+        b.filter_pattern = options.filter;
+        b.writer = options.writer;
+        return b;
     }
 
     pub fn deinit(self: *B) void {
@@ -769,21 +856,20 @@ pub const B = struct {
     /// `counting_allocator`, so a spawned B must never be copied, the same
     /// contract `testing.io` has.
     fn spawn(self: *const B, dest: *B, name: []const u8, func: Function) !void {
-        dest.* = .{
-            .internal_allocator = self.internal_allocator,
-            .io = self.io,
-            .argv0 = self.argv0,
-            .environ = self.environ,
-            .writer = self.writer,
-            .executing = true,
-            .name = name,
-            .bench_func = func,
-            .bench_time = self.bench_time,
-            .benchmem = self.benchmem,
-            .jsonl = self.jsonl,
-            .filter_pattern = self.filter_pattern,
-            .parallelism = self.parallelism,
-        };
+        dest.* = blank();
+        dest.internal_allocator = self.internal_allocator;
+        dest.io = self.io;
+        dest.argv0 = self.argv0;
+        dest.environ = self.environ;
+        dest.writer = self.writer;
+        dest.executing = true;
+        dest.name = name;
+        dest.bench_func = func;
+        dest.bench_time = self.bench_time;
+        dest.benchmem = self.benchmem;
+        dest.jsonl = self.jsonl;
+        dest.filter_pattern = self.filter_pattern;
+        dest.parallelism = self.parallelism;
 
         dest.counting_allocator = .init(self.internal_allocator);
         dest.allocator = dest.counting_allocator.allocator();
@@ -1106,8 +1192,13 @@ pub const B = struct {
 pub const Pb = struct {
     global_n: *atomic.Value(u64),
     grain: u64,
-    cache: u64 = 0,
+    cache: u64,
     b_n: u64,
+
+    /// An iterator over `b_n` iterations, with no grain cached yet.
+    pub fn init(global_n: *atomic.Value(u64), grain: u64, b_n: u64) Pb {
+        return .{ .global_n = global_n, .grain = grain, .cache = 0, .b_n = b_n };
+    }
 
     pub fn next(self: *Pb) bool {
         if (self.cache == 0) {
@@ -1134,7 +1225,7 @@ const ParallelContext = struct {
 };
 
 fn parallelWorker(ctx: *ParallelContext) void {
-    var pb: Pb = .{ .global_n = ctx.global_n, .grain = ctx.grain, .b_n = ctx.b_n };
+    var pb = Pb.init(ctx.global_n, ctx.grain, ctx.b_n);
     ctx.body(&pb) catch ctx.failed.store(1, .seq_cst);
 }
 
@@ -1473,7 +1564,7 @@ test "addMod discovers top-level public benchmark declarations only" {
         };
     };
 
-    var suite = B.init(testing.allocator, testing.io, .{});
+    var suite = B.init(testing.allocator, testing.io, .init);
     defer suite.deinit();
     try suite.addMod(Mod);
 
@@ -1492,16 +1583,16 @@ test "add during execution and run during registration are phase errors" {
     var buffer: [1024]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
 
-    var suite = B.init(testing.allocator, testing.io, .{
-        .writer = &writer,
-        .emit_environment = false,
-        .benchtime = .{ .count = 1 },
-    });
+    var options = Options.init;
+    options.writer = &writer;
+    options.emit_environment = false;
+    options.benchtime = .{ .count = 1 };
+    var suite = B.init(testing.allocator, testing.io, options);
     defer suite.deinit();
     try suite.add("Body", phase_suite.body);
     _ = try suite.finish();
     try testing.expectError(Error.InvalidPhase, suite.add("Late", phase_suite.body));
-    var fresh = B.init(testing.allocator, testing.io, .{});
+    var fresh = B.init(testing.allocator, testing.io, .init);
     defer fresh.deinit();
     try testing.expectError(Error.InvalidPhase, fresh.run("Early", phase_suite.body));
 }
@@ -1526,12 +1617,12 @@ test "filters accept the printed name and the registered name" {
         var buffer: [4096]u8 = undefined;
         var writer: Io.Writer = .fixed(&buffer);
 
-        var suite = B.init(testing.allocator, testing.io, .{
-            .writer = &writer,
-            .emit_environment = false,
-            .filter = pattern,
-            .benchtime = .{ .count = 3 },
-        });
+        var options = Options.init;
+        options.writer = &writer;
+        options.emit_environment = false;
+        options.filter = pattern;
+        options.benchtime = .{ .count = 3 };
+        var suite = B.init(testing.allocator, testing.io, options);
         defer suite.deinit();
         try suite.add("Parent", Suite.parent);
         try testing.expect(try suite.finish());
@@ -1564,14 +1655,14 @@ test "registered suite runs with filter, sub-benchmarks, and memory results" {
     var buffer: [4096]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
 
-    var suite = B.init(testing.allocator, testing.io, .{
-        .writer = &writer,
-        .emit_environment = false,
-        .filter = "^Parent/Selected$",
-        .count = 2,
-        .benchtime = .{ .count = 7 },
-        .benchmem = true,
-    });
+    var options = Options.init;
+    options.writer = &writer;
+    options.emit_environment = false;
+    options.filter = "^Parent/Selected$";
+    options.count = 2;
+    options.benchtime = .{ .count = 7 };
+    options.benchmem = true;
+    var suite = B.init(testing.allocator, testing.io, options);
     defer suite.deinit();
     try suite.add("Parent", Suite.parent);
     try testing.expect(try suite.finish());
@@ -1597,10 +1688,10 @@ test "failing sub-benchmark fails the suite" {
     var buffer: [4096]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
 
-    var suite = B.init(testing.allocator, testing.io, .{
-        .writer = &writer,
-        .emit_environment = false,
-    });
+    var options = Options.init;
+    options.writer = &writer;
+    options.emit_environment = false;
+    var suite = B.init(testing.allocator, testing.io, options);
     defer suite.deinit();
     try suite.add("Parent", Suite.parent);
     try testing.expect(!try suite.finish());
@@ -1621,9 +1712,9 @@ test "Loop benchmark runs and records iterations" {
         }
     }.run;
 
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
-        .benchtime = .{ .count = 5 },
-    });
+    var options = Options.init;
+    options.benchtime = .{ .count = 5 };
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 5), result.n);
     try testing.expectEqual(@as(f64, 5), result.extra.get("iters").?);
@@ -1637,9 +1728,9 @@ test "B.N style benchmark runs requested count" {
         }
     }.run;
 
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
-        .benchtime = .{ .count = 7 },
-    });
+    var options = Options.init;
+    options.benchtime = .{ .count = 7 };
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 7), result.n);
 }
@@ -1654,9 +1745,9 @@ test "b.allocator records timed allocations" {
         }
     }.run;
 
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
-        .benchtime = .{ .count = 3 },
-    });
+    var options = Options.init;
+    options.benchtime = .{ .count = 3 };
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 3), result.mem_allocs);
     try testing.expectEqual(@as(u64, 48), result.mem_bytes);
@@ -1676,9 +1767,9 @@ test "reportCounters adds counter units when the PMU allows" {
         }
     }.run;
 
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
-        .benchtime = .{ .count = 1000 },
-    });
+    var options = Options.init;
+    options.benchtime = .{ .count = 1000 };
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
     defer result.deinit(testing.allocator);
 
     // No PMU, or perf_event_paranoid says no: timings only, and no failure.
@@ -1698,7 +1789,7 @@ test "CLI split equal and short flags preserve options" {
     for (commands) |command| {
         var args = try TestArgs.init(testing.allocator, command);
         defer args.deinit();
-        var options = try Options.parse(testing.allocator, &args, .{});
+        var options = try Options.parse(testing.allocator, &args, .init);
         defer options.deinit(testing.allocator);
         try testing.expectEqual(@as(usize, 2), options.count);
         try testing.expectEqual(@as(u64, 7), options.benchtime.count);
@@ -1712,7 +1803,9 @@ test "CLI split equal and short flags preserve options" {
 test "CLI help durations defaults and errors" {
     var args = try TestArgs.init(testing.allocator, "bench --help --benchtime=1.5ms");
     defer args.deinit();
-    var options = try Options.parse(testing.allocator, &args, .{ .count = 3 });
+    var defaults = Options.init;
+    defaults.count = 3;
+    var options = try Options.parse(testing.allocator, &args, defaults);
     defer options.deinit(testing.allocator);
     try testing.expect(options.help);
     try testing.expectEqual(@as(usize, 3), options.count);
@@ -1727,7 +1820,7 @@ test "CLI help durations defaults and errors" {
     inline for (cases) |case| {
         var invalid = try TestArgs.init(testing.allocator, case[0]);
         defer invalid.deinit();
-        try testing.expectError(case[1], Options.parse(testing.allocator, &invalid, .{}));
+        try testing.expectError(case[1], Options.parse(testing.allocator, &invalid, .init));
     }
 }
 
@@ -1737,7 +1830,7 @@ test "CLI config entries, jsonl, and the argument separator" {
         "bench --config=rev=test --config shape=smoke --jsonl -- --benchtime=50x",
     );
     defer args.deinit();
-    var options = try Options.parse(testing.allocator, &args, .{});
+    var options = try Options.parse(testing.allocator, &args, .init);
     defer options.deinit(testing.allocator);
 
     try testing.expect(options.jsonl);
@@ -1759,7 +1852,7 @@ test "CLI config entries, jsonl, and the argument separator" {
         defer bad_args.deinit();
         try testing.expectError(
             error.InvalidConfig,
-            Options.parse(testing.allocator, &bad_args, .{}),
+            Options.parse(testing.allocator, &bad_args, .init),
         );
     }
 
@@ -1767,14 +1860,14 @@ test "CLI config entries, jsonl, and the argument separator" {
     defer no_value.deinit();
     try testing.expectError(
         error.MissingBenchmarkOptionValue,
-        Options.parse(testing.allocator, &no_value, .{}),
+        Options.parse(testing.allocator, &no_value, .init),
     );
 }
 
 test "slice args parse like iterator args" {
     const argv = [_][]const u8{ "bench", "-c2", "--benchtime=7x" };
-    var args: SliceArgs = .{ .args = &argv };
-    var options = try Options.parse(testing.allocator, &args, .{});
+    var args = SliceArgs.init(&argv);
+    var options = try Options.parse(testing.allocator, &args, .init);
     defer options.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 2), options.count);
     try testing.expectEqual(@as(u64, 7), options.benchtime.count);
@@ -1791,9 +1884,9 @@ test "parallel benchmark preserves iteration accounting" {
         }
     };
     work.completed.store(0, .seq_cst);
-    var result = try benchmark(testing.allocator, testing.io, work.run, .{
-        .benchtime = .{ .count = 7 },
-    });
+    var options = Options.init;
+    options.benchtime = .{ .count = 7 };
+    var result = try benchmark(testing.allocator, testing.io, work.run, options);
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 7), result.n);
     try testing.expectEqual(@as(u64, 8), work.completed.load(.seq_cst)); // warmup plus measured run
@@ -1828,7 +1921,7 @@ test "suite output round-trips through the benchfmt parser" {
         "bench --config=rev=test --benchtime=3x --count=3",
     );
     defer args.deinit();
-    var options = try Options.parse(testing.allocator, &args, .{});
+    var options = try Options.parse(testing.allocator, &args, .init);
     options.writer = &writer;
     options.emit_environment = false;
     var suite = B.init(testing.allocator, testing.io, options);
@@ -1914,7 +2007,7 @@ test "jsonl output records config, results, failures, and skips" {
         "bench --config=rev=jsonl --benchtime=2x --jsonl",
     );
     defer args.deinit();
-    var options = try Options.parse(testing.allocator, &args, .{});
+    var options = try Options.parse(testing.allocator, &args, .init);
     options.writer = &writer;
     options.emit_environment = false;
     var suite = B.init(testing.allocator, testing.io, options);
@@ -1955,10 +2048,10 @@ test "jsonl output records config, results, failures, and skips" {
 test "environment header is a benchfmt config block" {
     var buffer: [512]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
-    var suite = B.init(testing.allocator, testing.io, .{
-        .writer = &writer,
-        .benchtime = .{ .count = 1 },
-    });
+    var options = Options.init;
+    options.writer = &writer;
+    options.benchtime = .{ .count = 1 };
+    var suite = B.init(testing.allocator, testing.io, options);
     defer suite.deinit();
     try testing.expect(try suite.finish());
 
@@ -1991,8 +2084,8 @@ test "bench environment options come before the command line" {
     try testing.expectEqualStrings("--jsonl", args[2]);
     try testing.expectEqualStrings("--filter=argv", args[3]);
 
-    var parsed_args: SliceArgs = .{ .args = args };
-    const options = try Options.parse(arena, &parsed_args, .{});
+    var parsed_args = SliceArgs.init(args);
+    const options = try Options.parse(arena, &parsed_args, .init);
     try testing.expectEqualStrings("argv", options.filter.?);
     try testing.expect(options.jsonl);
 }

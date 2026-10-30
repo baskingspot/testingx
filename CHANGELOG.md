@@ -5,6 +5,16 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Public struct fields are now required, so a bare `.{}` or a partial literal no
+  longer compiles: build `bench.Options` from `Options.init` (and pass
+  `Options.init` to `Options.parse` and `B.init`), `bench.SliceArgs` from
+  `SliceArgs.init`, `bench.Result` from `Result.zero`, `bench.Pb` from
+  `Pb.init`, `perfcounter.Counters` from `Counters.empty`, and
+  `benchfmt.Reader` from `Reader.init`; `bench.B` and `bench.CountingAllocator`
+  are built only through their `init` constructors.
+
 ## [0.2.0] - 2026-10-25
 
 ### Added

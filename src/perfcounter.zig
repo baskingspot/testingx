@@ -72,11 +72,18 @@ const Read = extern struct {
 };
 
 pub const Counters = struct {
-    fds: [metric_count]Fd = @splat(-1),
+    fds: [metric_count]Fd,
     /// True once the kernel has run this counter for at least one window.
-    ran: [metric_count]bool = @splat(false),
+    ran: [metric_count]bool,
     /// Counts accumulated by `accumulate`, scaled to the full window.
-    totals: [metric_count]u64 = @splat(0),
+    totals: [metric_count]u64,
+
+    /// No counter open and nothing counted: every descriptor is -1.
+    pub const empty: Counters = .{
+        .fds = @splat(-1),
+        .ran = @splat(false),
+        .totals = @splat(0),
+    };
 
     /// Open one counter per metric. A metric the PMU refuses is dropped, not
     /// fatal: cycles and instructions are the floor.
@@ -189,7 +196,7 @@ test "units are benchfmt units" {
 test "a timed window reads cycles" {
     if (comptime !is_linux) return error.SkipZigTest;
 
-    var counters: Counters = .{};
+    var counters: Counters = .empty;
     // No counter opened: no PMU, or perf_event_paranoid says no.
     counters.open() catch return error.SkipZigTest;
     defer counters.close();
