@@ -131,7 +131,7 @@ fn decode(comptime text: []const u8, comptime encoding: Encoding) []const u8 {
     return &S.data;
 }
 
-fn buildFiles(comptime n: usize, comptime entries: [n]txtar.File) [n]Fixture {
+fn buildFiles(comptime n: usize, comptime entries: [n]Fixture) [n]Fixture {
     // Sort the names once to find duplicates in O(n log n) instead of
     // comparing every pair. The budget stays linear, with headroom for the
     // log factor; the default 1000 is not enough for a large archive.

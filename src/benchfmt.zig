@@ -27,6 +27,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const Io = std.Io;
 const testing = std.testing;
+const assert = std.debug.assert;
 
 pub const Error = error{
     InvalidConfigKey,
@@ -164,7 +165,7 @@ pub const Name = struct {
             index += 1;
         }
 
-        std.debug.assert(index == items.len);
+        assert(index == items.len);
         return .{ .items = items, .allocator = allocator };
     }
 

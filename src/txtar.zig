@@ -8,6 +8,7 @@
 const std = @import("std");
 const testing = std.testing;
 const mem = std.mem;
+const Io = std.Io;
 const Allocator = mem.Allocator;
 
 pub const File = struct {
@@ -31,7 +32,7 @@ pub fn format(
     comment: []const u8,
     files: []const File,
 ) FormatError![]u8 {
-    var buffer: std.Io.Writer.Allocating = .init(allocator);
+    var buffer: Io.Writer.Allocating = .init(allocator);
     errdefer buffer.deinit();
     const writer = &buffer.writer;
 
@@ -179,7 +180,7 @@ fn withNewline(comptime text: []const u8) []const u8 {
 }
 
 fn lineEnd(text: []const u8, pos: usize) usize {
-    return mem.indexOfScalarPos(u8, text, pos, '\n') orelse text.len;
+    return mem.findScalarPos(u8, text, pos, '\n') orelse text.len;
 }
 
 fn nextPos(text: []const u8, end: usize) usize {

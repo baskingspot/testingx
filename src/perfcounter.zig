@@ -18,6 +18,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const linux = std.os.linux;
+const testing = std.testing;
 
 const is_linux = builtin.os.tag == .linux;
 
@@ -187,9 +188,9 @@ pub const Counters = struct {
 test "units are benchfmt units" {
     for (std.enums.values(Metric)) |metric| {
         const unit = metric.unit();
-        try std.testing.expect(unit.len > 0);
-        for (unit) |c| try std.testing.expect(!std.ascii.isWhitespace(c));
-        try std.testing.expect(std.mem.endsWith(u8, unit, "/op"));
+        try testing.expect(unit.len > 0);
+        for (unit) |c| try testing.expect(!std.ascii.isWhitespace(c));
+        try testing.expect(std.mem.endsWith(u8, unit, "/op"));
     }
 }
 
@@ -209,8 +210,8 @@ test "a timed window reads cycles" {
     counters.disable();
     counters.accumulate();
 
-    try std.testing.expect(counters.available(.cycles));
-    try std.testing.expect(counters.count(.cycles) > 0);
+    try testing.expect(counters.available(.cycles));
+    try testing.expect(counters.count(.cycles) > 0);
 
     // A second window with no work adds nothing to the first.
     const first = counters.count(.cycles);
@@ -218,5 +219,5 @@ test "a timed window reads cycles" {
     counters.enable();
     counters.disable();
     counters.accumulate();
-    try std.testing.expect(counters.count(.cycles) < first);
+    try testing.expect(counters.count(.cycles) < first);
 }

@@ -6,6 +6,8 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
+const testing = std.testing;
 
 /// The directory this test may write files into, or null when the runner was
 /// not asked to collect artifacts with `--artifacts=DIR` or
@@ -15,10 +17,10 @@ const Allocator = std.mem.Allocator;
 /// runner keeps it when the test fails, deletes it when the test passes, and
 /// prints its path with the failure. The returned path belongs to `allocator`.
 ///
-/// The value travels on `std.testing.environ`, the one channel the runner and
+/// The value travels on `testing.environ`, the one channel the runner and
 /// the test module share.
 pub fn artifactDir(allocator: Allocator) !?[]const u8 {
-    const path = std.testing.environ.getAlloc(
+    const path = testing.environ.getAlloc(
         allocator,
         "TESTINGX_ARTIFACT_DIR",
     ) catch |err| switch (err) {
@@ -27,7 +29,7 @@ pub fn artifactDir(allocator: Allocator) !?[]const u8 {
     };
     errdefer allocator.free(path);
 
-    try std.Io.Dir.cwd().createDirPath(std.testing.io, path);
+    try Io.Dir.cwd().createDirPath(testing.io, path);
     return path;
 }
 
@@ -40,10 +42,10 @@ pub fn writeArtifact(allocator: Allocator, name: []const u8, bytes: []const u8) 
     const dir = (try artifactDir(allocator)) orelse return;
     defer allocator.free(dir);
 
-    const path = try std.Io.Dir.path.join(allocator, &.{ dir, name });
+    const path = try Io.Dir.path.join(allocator, &.{ dir, name });
     defer allocator.free(path);
 
-    const file = try std.Io.Dir.cwd().createFile(std.testing.io, path, .{});
-    defer file.close(std.testing.io);
-    try file.writeStreamingAll(std.testing.io, bytes);
+    const file = try Io.Dir.cwd().createFile(testing.io, path, .{});
+    defer file.close(testing.io);
+    try file.writeStreamingAll(testing.io, bytes);
 }

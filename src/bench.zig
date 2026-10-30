@@ -44,6 +44,8 @@ const Io = std.Io;
 const atomic = std.atomic;
 const Thread = std.Thread;
 const testing = std.testing;
+const assert = std.debug.assert;
+const print = std.debug.print;
 const doNotOptimizeAway = mem.doNotOptimizeAway;
 const Alignment = mem.Alignment;
 const builtin = @import("builtin");
@@ -112,7 +114,7 @@ pub const Options = struct {
     /// values are duplicated with `allocator`, which also owns the list.
     /// `defaults` must not already carry config entries.
     pub fn parse(allocator: Allocator, args: anytype, defaults: Options) !Options {
-        std.debug.assert(defaults.config.items.len == 0);
+        assert(defaults.config.items.len == 0);
         _ = args.skip();
 
         var options = defaults;
@@ -1027,7 +1029,7 @@ pub const B = struct {
         var global_n: atomic.Value(u64) = .init(0);
         const cpu_count = Thread.getCpuCount() catch 1;
         const thread_count = @max(@as(usize, 1), self.parallelism * cpu_count);
-        const threads = try self.internal_allocator.alloc(std.Thread, thread_count);
+        const threads = try self.internal_allocator.alloc(Thread, thread_count);
         defer self.internal_allocator.free(threads);
 
         var ctx: ParallelContext = .{
@@ -1054,12 +1056,12 @@ pub const B = struct {
     /// loop. The defer guarantees the final value is observed, which keeps
     /// every iteration that contributes to it.
     pub inline fn keepAlive(_: *B, value: anytype) void {
-        mem.doNotOptimizeAway(value);
+        doNotOptimizeAway(value);
     }
 
     pub inline fn blackBox(_: *B, value: anytype) @TypeOf(value) {
         var runtime_value = value;
-        mem.doNotOptimizeAway(&runtime_value);
+        doNotOptimizeAway(&runtime_value);
         return runtime_value;
     }
 
@@ -1951,7 +1953,7 @@ test "suite output round-trips through the benchfmt parser" {
                 if (mem.eql(u8, text, "SKIP: SkipMe")) skip_comments += 1;
             },
             .syntax_error => |syntax_error| {
-                std.debug.print("unexpected syntax error on line {d}: {s}\n", .{
+                print("unexpected syntax error on line {d}: {s}\n", .{
                     syntax_error.line,
                     syntax_error.message(),
                 });

@@ -10,6 +10,7 @@ const builtin = @import("builtin");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const elf = std.elf;
+const testing = std.testing;
 
 pub const Symbol = struct {
     /// The linkage name, allocated by the caller's allocator.
@@ -121,12 +122,12 @@ test "lookup finds this test binary's own symbol" {
     if (comptime builtin.object_format == .elf) {
         const info = std.debug.getSelfDebugInfo() catch return error.SkipZigTest;
         const address = @intFromPtr(&lookup);
-        const slide = info.getModuleSlide(std.testing.io, address) catch return error.SkipZigTest;
-        const path = info.getModuleName(std.testing.io, address) catch return error.SkipZigTest;
+        const slide = info.getModuleSlide(testing.io, address) catch return error.SkipZigTest;
+        const path = info.getModuleName(testing.io, address) catch return error.SkipZigTest;
 
-        const symbol = try lookup(std.testing.allocator, std.testing.io, path, address - slide);
-        defer std.testing.allocator.free(symbol.name);
-        try std.testing.expect(std.mem.endsWith(u8, symbol.name, "lookup"));
-        try std.testing.expect(symbol.size > 0);
+        const symbol = try lookup(testing.allocator, testing.io, path, address - slide);
+        defer testing.allocator.free(symbol.name);
+        try testing.expect(std.mem.endsWith(u8, symbol.name, "lookup"));
+        try testing.expect(symbol.size > 0);
     } else return error.SkipZigTest;
 }

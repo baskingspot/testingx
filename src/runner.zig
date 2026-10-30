@@ -214,7 +214,7 @@ fn envBool(value: ?[]const u8) ?bool {
 /// the runner cannot tell policy from noise.
 fn envGet(
     arena: Allocator,
-    environ: std.process.Environ,
+    environ: process.Environ,
     key: []const u8,
 ) ?[]const u8 {
     return environ.getAlloc(arena, key) catch |err| switch (err) {
@@ -1114,7 +1114,7 @@ fn friendlyName(name: []const u8) []const u8 {
     // A named test "test_42" produces "module.test.test_42" which has ".test."
     // before the test name. An unnamed test produces "module.test_0" which
     // has ".test_" but NO ".test.". The segment is "test_0", not "test".
-    var it = std.mem.splitScalar(u8, name, '.');
+    var it = mem.splitScalar(u8, name, '.');
     while (it.next()) |segment| {
         if (mem.eql(u8, segment, "test")) {
             const rest = it.rest();

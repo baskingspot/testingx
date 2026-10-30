@@ -65,10 +65,11 @@ guide: api
 doc-deploy: doc
     wrangler deploy
 
-[doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
+[doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, the ast-grep rules, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
 [group("lint")]
 lint:
     ziglint
+    baskingspot-lint src
     zig fmt --check src build.zig
     nix fmt -- --ci
     oxfmt --check README.md AGENTS.md docs/content docs/config.toml wrangler.jsonc .github
