@@ -8,12 +8,13 @@ All notable changes to testingx are recorded here. The format follows
 ### Changed
 
 - Public struct fields are now required, so a bare `.{}` or a partial literal no
-  longer compiles: build `bench.Options` from `Options.init` (and pass
-  `Options.init` to `Options.parse` and `B.init`), `bench.SliceArgs` from
+  longer compiles for value types: `bench.SliceArgs` builds from
   `SliceArgs.init`, `bench.Result` from `Result.zero`, `bench.Pb` from
   `Pb.init`, `perfcounter.Counters` from `Counters.empty`, and
   `benchfmt.Reader` from `Reader.init`; `bench.B` and `bench.CountingAllocator`
-  are built only through their `init` constructors.
+  are built only through their `init` constructors. `bench.Options` keeps its
+  field defaults: pass a partial literal, or `.{}`, to `Options.parse` and
+  `B.init`.
 
 ## [0.2.0] - 2026-10-25
 
@@ -40,7 +41,7 @@ All notable changes to testingx are recorded here. The format follows
   `branches/op`, and `ipc` from hardware counters (Linux, user space), and
   `TESTINGX_BENCH_CYCLES` makes it the local default. `B.reportCounters()` is
   the per-benchmark form, the way `B.reportAllocs()` is for allocations. `zig
-  build bench-bin` installs the binary both flags point at.
+build bench-bin` installs the binary both flags point at.
 
 - `--allow-empty-filter` and `TESTINGX_ALLOW_EMPTY_FILTER` make a filter that
   matches no tests print a zero summary and exit 0, so a build can forward one
