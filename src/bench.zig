@@ -67,41 +67,25 @@ pub const Error = error{
 };
 
 /// The flags, as parsed by `benchMain` or built by a test.
+// ast-grep-ignore: public-struct-field-default -- options bag: call sites override one knob
 pub const Options = struct {
-    benchtime: DurationOrCount,
-    benchmem: bool,
-    count: usize,
-    parallelism: usize,
-    filter: ?[]const u8,
-    emit_environment: bool,
-    jsonl: bool,
+    benchtime: DurationOrCount = .{ .duration_ns = time.ns_per_s },
+    benchmem: bool = false,
+    count: usize = 1,
+    parallelism: usize = 1,
+    filter: ?[]const u8 = null,
+    emit_environment: bool = true,
+    jsonl: bool = false,
     /// `--disasm`: print the linker symbol and disassembly of matching
     /// benchmarks instead of running anything.
-    disasm: ?[]const u8,
+    disasm: ?[]const u8 = null,
     /// `--cycles`: read hardware counters around each timed section.
-    cycles: bool,
-    help: bool,
-    writer: ?*Io.Writer,
+    cycles: bool = false,
+    help: bool = false,
+    writer: ?*Io.Writer = null,
     /// Extra config lines from `--config`, emitted before the environment.
     /// The list and its values are owned by this Options.
-    config: std.ArrayList(benchfmt.Config),
-
-    /// One second per benchmark, one iteration, no filter, the environment
-    /// header on, and no config entries.
-    pub const init: Options = .{
-        .benchtime = .{ .duration_ns = time.ns_per_s },
-        .benchmem = false,
-        .count = 1,
-        .parallelism = 1,
-        .filter = null,
-        .emit_environment = true,
-        .jsonl = false,
-        .disasm = null,
-        .cycles = false,
-        .help = false,
-        .writer = null,
-        .config = .empty,
-    };
+    config: std.ArrayList(benchfmt.Config) = .empty,
 
     pub fn deinit(self: *Options, allocator: Allocator) void {
         for (self.config.items) |entry| allocator.free(entry.value);
@@ -536,7 +520,7 @@ pub const B = struct {
             .io_instance = undefined,
             .argv0 = .empty,
             .environ = .empty,
-            .options = .init,
+            .options = .{},
             .specs = .empty,
             .writer = null,
             .stdout_buf = undefined,
@@ -603,7 +587,7 @@ pub const B = struct {
             .cycles = envGet(arena, environ, "TESTINGX_BENCH_CYCLES"),
         });
         var args = SliceArgs.init(combined);
-        const options = try Options.parse(arena, &args, .init);
+        const options = try Options.parse(arena, &args, .{});
         var b = blank();
         b.internal_allocator = arena;
         b.io = entry.io;
@@ -1566,7 +1550,7 @@ test "addMod discovers top-level public benchmark declarations only" {
         };
     };
 
-    var suite = B.init(testing.allocator, testing.io, .init);
+    var suite = B.init(testing.allocator, testing.io, .{});
     defer suite.deinit();
     try suite.addMod(Mod);
 
@@ -1585,16 +1569,16 @@ test "add during execution and run during registration are phase errors" {
     var buffer: [1024]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
 
-    var options = Options.init;
-    options.writer = &writer;
-    options.emit_environment = false;
-    options.benchtime = .{ .count = 1 };
-    var suite = B.init(testing.allocator, testing.io, options);
+    var suite = B.init(testing.allocator, testing.io, .{
+        .writer = &writer,
+        .emit_environment = false,
+        .benchtime = .{ .count = 1 },
+    });
     defer suite.deinit();
     try suite.add("Body", phase_suite.body);
     _ = try suite.finish();
     try testing.expectError(Error.InvalidPhase, suite.add("Late", phase_suite.body));
-    var fresh = B.init(testing.allocator, testing.io, .init);
+    var fresh = B.init(testing.allocator, testing.io, .{});
     defer fresh.deinit();
     try testing.expectError(Error.InvalidPhase, fresh.run("Early", phase_suite.body));
 }
@@ -1619,12 +1603,12 @@ test "filters accept the printed name and the registered name" {
         var buffer: [4096]u8 = undefined;
         var writer: Io.Writer = .fixed(&buffer);
 
-        var options = Options.init;
-        options.writer = &writer;
-        options.emit_environment = false;
-        options.filter = pattern;
-        options.benchtime = .{ .count = 3 };
-        var suite = B.init(testing.allocator, testing.io, options);
+        var suite = B.init(testing.allocator, testing.io, .{
+            .writer = &writer,
+            .emit_environment = false,
+            .filter = pattern,
+            .benchtime = .{ .count = 3 },
+        });
         defer suite.deinit();
         try suite.add("Parent", Suite.parent);
         try testing.expect(try suite.finish());
@@ -1657,14 +1641,14 @@ test "registered suite runs with filter, sub-benchmarks, and memory results" {
     var buffer: [4096]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
 
-    var options = Options.init;
-    options.writer = &writer;
-    options.emit_environment = false;
-    options.filter = "^Parent/Selected$";
-    options.count = 2;
-    options.benchtime = .{ .count = 7 };
-    options.benchmem = true;
-    var suite = B.init(testing.allocator, testing.io, options);
+    var suite = B.init(testing.allocator, testing.io, .{
+        .writer = &writer,
+        .emit_environment = false,
+        .filter = "^Parent/Selected$",
+        .count = 2,
+        .benchtime = .{ .count = 7 },
+        .benchmem = true,
+    });
     defer suite.deinit();
     try suite.add("Parent", Suite.parent);
     try testing.expect(try suite.finish());
@@ -1690,10 +1674,10 @@ test "failing sub-benchmark fails the suite" {
     var buffer: [4096]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
 
-    var options = Options.init;
-    options.writer = &writer;
-    options.emit_environment = false;
-    var suite = B.init(testing.allocator, testing.io, options);
+    var suite = B.init(testing.allocator, testing.io, .{
+        .writer = &writer,
+        .emit_environment = false,
+    });
     defer suite.deinit();
     try suite.add("Parent", Suite.parent);
     try testing.expect(!try suite.finish());
@@ -1714,9 +1698,9 @@ test "Loop benchmark runs and records iterations" {
         }
     }.run;
 
-    var options = Options.init;
-    options.benchtime = .{ .count = 5 };
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
+        .benchtime = .{ .count = 5 },
+    });
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 5), result.n);
     try testing.expectEqual(@as(f64, 5), result.extra.get("iters").?);
@@ -1730,9 +1714,9 @@ test "B.N style benchmark runs requested count" {
         }
     }.run;
 
-    var options = Options.init;
-    options.benchtime = .{ .count = 7 };
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
+        .benchtime = .{ .count = 7 },
+    });
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 7), result.n);
 }
@@ -1747,9 +1731,9 @@ test "b.allocator records timed allocations" {
         }
     }.run;
 
-    var options = Options.init;
-    options.benchtime = .{ .count = 3 };
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
+        .benchtime = .{ .count = 3 },
+    });
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 3), result.mem_allocs);
     try testing.expectEqual(@as(u64, 48), result.mem_bytes);
@@ -1769,9 +1753,9 @@ test "reportCounters adds counter units when the PMU allows" {
         }
     }.run;
 
-    var options = Options.init;
-    options.benchtime = .{ .count = 1000 };
-    var result = try benchmark(testing.allocator, testing.io, bench_fn, options);
+    var result = try benchmark(testing.allocator, testing.io, bench_fn, .{
+        .benchtime = .{ .count = 1000 },
+    });
     defer result.deinit(testing.allocator);
 
     // No PMU, or perf_event_paranoid says no: timings only, and no failure.
@@ -1791,7 +1775,7 @@ test "CLI split equal and short flags preserve options" {
     for (commands) |command| {
         var args = try TestArgs.init(testing.allocator, command);
         defer args.deinit();
-        var options = try Options.parse(testing.allocator, &args, .init);
+        var options = try Options.parse(testing.allocator, &args, .{});
         defer options.deinit(testing.allocator);
         try testing.expectEqual(@as(usize, 2), options.count);
         try testing.expectEqual(@as(u64, 7), options.benchtime.count);
@@ -1805,9 +1789,7 @@ test "CLI split equal and short flags preserve options" {
 test "CLI help durations defaults and errors" {
     var args = try TestArgs.init(testing.allocator, "bench --help --benchtime=1.5ms");
     defer args.deinit();
-    var defaults = Options.init;
-    defaults.count = 3;
-    var options = try Options.parse(testing.allocator, &args, defaults);
+    var options = try Options.parse(testing.allocator, &args, .{ .count = 3 });
     defer options.deinit(testing.allocator);
     try testing.expect(options.help);
     try testing.expectEqual(@as(usize, 3), options.count);
@@ -1822,7 +1804,7 @@ test "CLI help durations defaults and errors" {
     inline for (cases) |case| {
         var invalid = try TestArgs.init(testing.allocator, case[0]);
         defer invalid.deinit();
-        try testing.expectError(case[1], Options.parse(testing.allocator, &invalid, .init));
+        try testing.expectError(case[1], Options.parse(testing.allocator, &invalid, .{}));
     }
 }
 
@@ -1832,7 +1814,7 @@ test "CLI config entries, jsonl, and the argument separator" {
         "bench --config=rev=test --config shape=smoke --jsonl -- --benchtime=50x",
     );
     defer args.deinit();
-    var options = try Options.parse(testing.allocator, &args, .init);
+    var options = try Options.parse(testing.allocator, &args, .{});
     defer options.deinit(testing.allocator);
 
     try testing.expect(options.jsonl);
@@ -1854,7 +1836,7 @@ test "CLI config entries, jsonl, and the argument separator" {
         defer bad_args.deinit();
         try testing.expectError(
             error.InvalidConfig,
-            Options.parse(testing.allocator, &bad_args, .init),
+            Options.parse(testing.allocator, &bad_args, .{}),
         );
     }
 
@@ -1862,14 +1844,14 @@ test "CLI config entries, jsonl, and the argument separator" {
     defer no_value.deinit();
     try testing.expectError(
         error.MissingBenchmarkOptionValue,
-        Options.parse(testing.allocator, &no_value, .init),
+        Options.parse(testing.allocator, &no_value, .{}),
     );
 }
 
 test "slice args parse like iterator args" {
     const argv = [_][]const u8{ "bench", "-c2", "--benchtime=7x" };
     var args = SliceArgs.init(&argv);
-    var options = try Options.parse(testing.allocator, &args, .init);
+    var options = try Options.parse(testing.allocator, &args, .{});
     defer options.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 2), options.count);
     try testing.expectEqual(@as(u64, 7), options.benchtime.count);
@@ -1886,9 +1868,9 @@ test "parallel benchmark preserves iteration accounting" {
         }
     };
     work.completed.store(0, .seq_cst);
-    var options = Options.init;
-    options.benchtime = .{ .count = 7 };
-    var result = try benchmark(testing.allocator, testing.io, work.run, options);
+    var result = try benchmark(testing.allocator, testing.io, work.run, .{
+        .benchtime = .{ .count = 7 },
+    });
     defer result.deinit(testing.allocator);
     try testing.expectEqual(@as(u64, 7), result.n);
     try testing.expectEqual(@as(u64, 8), work.completed.load(.seq_cst)); // warmup plus measured run
@@ -1923,7 +1905,7 @@ test "suite output round-trips through the benchfmt parser" {
         "bench --config=rev=test --benchtime=3x --count=3",
     );
     defer args.deinit();
-    var options = try Options.parse(testing.allocator, &args, .init);
+    var options = try Options.parse(testing.allocator, &args, .{});
     options.writer = &writer;
     options.emit_environment = false;
     var suite = B.init(testing.allocator, testing.io, options);
@@ -2009,7 +1991,7 @@ test "jsonl output records config, results, failures, and skips" {
         "bench --config=rev=jsonl --benchtime=2x --jsonl",
     );
     defer args.deinit();
-    var options = try Options.parse(testing.allocator, &args, .init);
+    var options = try Options.parse(testing.allocator, &args, .{});
     options.writer = &writer;
     options.emit_environment = false;
     var suite = B.init(testing.allocator, testing.io, options);
@@ -2050,10 +2032,10 @@ test "jsonl output records config, results, failures, and skips" {
 test "environment header is a benchfmt config block" {
     var buffer: [512]u8 = undefined;
     var writer: Io.Writer = .fixed(&buffer);
-    var options = Options.init;
-    options.writer = &writer;
-    options.benchtime = .{ .count = 1 };
-    var suite = B.init(testing.allocator, testing.io, options);
+    var suite = B.init(testing.allocator, testing.io, .{
+        .writer = &writer,
+        .benchtime = .{ .count = 1 },
+    });
     defer suite.deinit();
     try testing.expect(try suite.finish());
 
@@ -2087,7 +2069,7 @@ test "bench environment options come before the command line" {
     try testing.expectEqualStrings("--filter=argv", args[3]);
 
     var parsed_args = SliceArgs.init(args);
-    const options = try Options.parse(arena, &parsed_args, .init);
+    const options = try Options.parse(arena, &parsed_args, .{});
     try testing.expectEqualStrings("argv", options.filter.?);
     try testing.expect(options.jsonl);
 }
