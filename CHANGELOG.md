@@ -5,6 +5,8 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-31
+
 ### Changed
 
 - Public struct fields are now required, so a bare `.{}` or a partial literal no
