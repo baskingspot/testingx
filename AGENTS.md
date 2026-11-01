@@ -19,7 +19,7 @@ A test runner that replaces the built-in one, and benchmarks that sit beside you
 
 ## Environment
 
-Zig 0.16 only. The flake is the tool contract, from `baskingspot/nix`: `nix develop` provides Zig, `ziglint`, the docs tools, and `benchstat`, and nothing comes from the system PATH. The justfile is the command interface: `just test`, `just bench`, `just bench-e2e`, `just doc`, `just lint`, `just ci`. Run `just fmt` before you commit.
+Zig 0.17 only. The flake is the tool contract, from `baskingspot/nix`: `nix develop` provides Zig, `ziglint`, the docs tools, and `benchstat`, and nothing comes from the system PATH. The justfile is the command interface: `just test`, `just bench`, `just bench-e2e`, `just doc`, `just lint`, `just ci`. Run `just fmt` before you commit.
 
 ## Rules
 

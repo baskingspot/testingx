@@ -53,8 +53,9 @@ run step declares no outputs, so Zig reruns it on every build;
   (`grep -Eq '^testingx: [0-9]+ passed, 0 failed,'`).
 - `ZTEST_EXPECT_SEED` (used by ztest's fixture check) becomes
   `TESTINGX_EXPECT_SEED`.
-- Pass the build's seed through so reproduction works:
-  `run_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}))`.
+- Forward the flags after `zig build test --` with
+  `run_tests.addPassthruArgs()`. The runner picks a random seed and prints it
+  in the summary; `--seed=N` reproduces a run.
 - The summary line keeps its shape:
   `testingx: N passed, M failed, K skipped (of T total) in Xms (seed: 0x...)`.
   Flaky runs add `, F flaky` and a `testingx: flaky:` line. The status line
@@ -137,7 +138,7 @@ const run_bench = testingx.addBench(b, .{
     // built for them, so its imports are not inherited from anywhere.
     .imports = &.{.{ .name = "mylib", .module = lib_module }},
 });
-if (b.args) |args| run_bench.addArgs(args);
+run_bench.addPassthruArgs();
 b.step("bench", "Run benchmarks").dependOn(&run_bench.step);
 ```
 

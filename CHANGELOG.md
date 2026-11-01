@@ -5,6 +5,15 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- testingx now requires Zig 0.17; `minimum_zig_version` is `0.17.0`. Zig 0.16
+  users stay on v0.3.0.
+- The runner picks a random seed when `--seed` is not given and prints it in
+  the summary. Zig 0.17 removed `b.graph.random_seed`, so drop the
+  `--seed=0x{x}` argument from your test run step, and forward flags with
+  `run_tests.addPassthruArgs()` instead of `b.args`.
+
 ## [0.3.0] - 2026-10-31
 
 ### Changed

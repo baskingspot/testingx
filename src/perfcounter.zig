@@ -64,7 +64,7 @@ pub const Metric = enum {
     }
 };
 
-pub const metric_count = @typeInfo(Metric).@"enum".fields.len;
+pub const metric_count = @typeInfo(Metric).@"enum".field_names.len;
 
 const Read = extern struct {
     value: u64,
@@ -96,11 +96,11 @@ pub const Counters = struct {
             for (std.enums.values(Metric)) |metric| {
                 var attr: linux.perf_event_attr = .{
                     .type = .HARDWARE,
-                    .config = @intFromEnum(metric.hw()),
+                    .config = @backingInt(metric.hw()),
                     .read_format = format_time,
                     .flags = .{ .disabled = true, .exclude_kernel = true, .exclude_hv = true },
                 };
-                self.fds[@intFromEnum(metric)] = std.posix.perf_event_open(
+                self.fds[@backingInt(metric)] = std.posix.perf_event_open(
                     &attr,
                     0,
                     -1,
@@ -164,11 +164,11 @@ pub const Counters = struct {
     /// Whether the kernel actually ran this counter; zero would be a lie
     /// otherwise.
     pub fn available(self: *const Counters, metric: Metric) bool {
-        return self.ran[@intFromEnum(metric)];
+        return self.ran[@backingInt(metric)];
     }
 
     pub fn count(self: *const Counters, metric: Metric) u64 {
-        return self.totals[@intFromEnum(metric)];
+        return self.totals[@backingInt(metric)];
     }
 
     pub fn isOpen(self: *const Counters) bool {

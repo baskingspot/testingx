@@ -76,10 +76,10 @@ pub fn log(
     args: anytype,
 ) void {
     @disableInstrumentation();
-    if (@intFromEnum(message_level) <= @intFromEnum(std.log.Level.err)) {
+    if (@backingInt(message_level) <= @backingInt(std.log.Level.err)) {
         log_err_count +|= 1;
     }
-    if (@intFromEnum(message_level) > @intFromEnum(testing.log_level)) return;
+    if (@backingInt(message_level) > @backingInt(testing.log_level)) return;
 
     // Inside a test the line belongs to that test: hold it, indented under the
     // result, the way `t.Log` does. Outside a test it goes straight out.
@@ -87,7 +87,7 @@ pub fn log(
         const indented = "    [" ++ @tagName(scope) ++
             "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n";
         const rest = log_buffer[log_len..];
-        const written = std.fmt.bufPrint(rest, indented, args) catch {
+        const written = mem.print(rest, indented, args) catch {
             log_len = log_buffer.len;
             return;
         };
@@ -177,19 +177,19 @@ fn collectArgs(
     var args: std.ArrayList([]const u8) = .empty;
     try args.append(arena, argv[0]);
     if (env.format) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--format={s}", .{value}));
+        try args.append(arena, try arena.print("--format={s}", .{value}));
     }
     if (env.filter) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--filter={s}", .{value}));
+        try args.append(arena, try arena.print("--filter={s}", .{value}));
     }
     if (env.skip) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--skip={s}", .{value}));
+        try args.append(arena, try arena.print("--skip={s}", .{value}));
     }
     if (env.artifacts) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--artifacts={s}", .{value}));
+        try args.append(arena, try arena.print("--artifacts={s}", .{value}));
     }
     if (env.timeout) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--timeout={s}", .{value}));
+        try args.append(arena, try arena.print("--timeout={s}", .{value}));
     }
     if (envBool(env.fail_fast)) |on| {
         if (on) try args.append(arena, "--fail-fast");
@@ -437,19 +437,13 @@ pub fn main(init: process.Init) u8 {
         process.fatal("testingx: cannot build the argument list: {t}", .{err});
     const parsed = parse(args) catch |err|
         process.fatal("testingx: cannot parse flags: {t}", .{err});
-    if (parsed.seed) |seed| {
-        testing.random_seed = seed;
-    }
-    switch (parsed.flags.shuffle) {
-        // Shuffling with no seed would otherwise always use 0. Pick a seed and
-        // print it in the summary so the order can be reproduced with --seed.
-        .on => if (parsed.seed == null) {
-            var seed_bytes: [4]u8 = undefined;
-            io.random(&seed_bytes);
-            testing.random_seed = mem.readInt(u32, &seed_bytes, .little);
-        },
-        else => {},
-    }
+    // The build graph no longer hands a seed to a simple-mode runner, so pick
+    // one here and print it in the summary; --seed reproduces the run.
+    testing.random_seed = parsed.seed orelse seed: {
+        var seed_bytes: [4]u8 = undefined;
+        io.random(&seed_bytes);
+        break :seed mem.readInt(u32, &seed_bytes, .little);
+    };
 
     if (builtin.test_functions.len == 0) {
         print("no tests found\n", .{});
@@ -710,7 +704,10 @@ fn runAttempts(options: RunOptions, test_fn: std.builtin.TestFn, name: []const u
 fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     current_test = friendlyName(test_fn.name);
     log_len = 0;
-    testing.allocator_instance = .{};
+    testing.allocator_instance = .init(std.heap.page_allocator, .{
+        .canary = 0xc3a701ba,
+        .check_write_after_free = true,
+    });
     // Keep test I/O allocations separate from the runner's I/O allocations.
     testing.environ = options.minimal.environ;
     testing.io_instance = .init(testing.allocator, .{
@@ -743,7 +740,7 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     const test_log_errs = log_err_count;
     const error_trace = @errorReturnTrace();
     testing.io_instance.deinit();
-    const leaked = testing.allocator_instance.deinit() == .leak;
+    const leaked = testing.allocator_instance.deinit() != 0;
     const elapsed = test_start.untilNow(options.io).raw;
     const logs = captureLogs(options.arena);
     testing.environ = options.minimal.environ;
