@@ -635,20 +635,31 @@ pub const B = struct {
     pub fn addMod(self: *B, comptime mod: type) !void {
         if (self.executing) return Error.InvalidPhase;
         @setEvalBranchQuota(100_000);
-        inline for (@typeInfo(mod).@"struct".decls) |decl| {
-            if (comptime isBenchmarkDecl(mod, decl)) {
-                try self.specs.append(self.internal_allocator, .{
-                    .name = comptime B.benchmarkName(decl.name),
-                    .func = @field(mod, decl.name),
-                });
+        // Zig 0.17 replaced `decls` with `decl_names` on the struct type info.
+        if (comptime @hasField(std.builtin.Type.Struct, "decl_names")) {
+            inline for (@typeInfo(mod).@"struct".decl_names) |decl_name| {
+                try self.addBenchmarkDecl(mod, decl_name);
+            }
+        } else {
+            inline for (@typeInfo(mod).@"struct".decls) |decl| {
+                try self.addBenchmarkDecl(mod, decl.name);
             }
         }
     }
 
-    fn isBenchmarkDecl(comptime mod: type, comptime decl: std.builtin.Type.Declaration) bool {
-        // `decls` already lists only public declarations from another module.
-        if (!isBenchmarkName(decl.name)) return false;
-        return isBenchmarkFunction(@field(mod, decl.name));
+    fn addBenchmarkDecl(self: *B, comptime mod: type, comptime decl_name: []const u8) !void {
+        if (comptime isBenchmarkDecl(mod, decl_name)) {
+            try self.specs.append(self.internal_allocator, .{
+                .name = comptime B.benchmarkName(decl_name),
+                .func = @field(mod, decl_name),
+            });
+        }
+    }
+
+    fn isBenchmarkDecl(comptime mod: type, comptime decl_name: []const u8) bool {
+        // Either list already holds only public declarations from another module.
+        if (!isBenchmarkName(decl_name)) return false;
+        return isBenchmarkFunction(@field(mod, decl_name));
     }
 
     fn isBenchmarkName(comptime name: []const u8) bool {
@@ -666,7 +677,11 @@ pub const B = struct {
             else => return false,
         };
 
-        if (fn_info.params.len != 1 or fn_info.params[0].type != *B) return false;
+        if (comptime @hasField(std.builtin.Type.Fn, "param_types")) {
+            if (fn_info.param_types.len != 1 or fn_info.param_types[0] != *B) return false;
+        } else {
+            if (fn_info.params.len != 1 or fn_info.params[0].type != *B) return false;
+        }
         const return_type = fn_info.return_type orelse return false;
         return @typeInfo(return_type) == .error_union and
             @typeInfo(return_type).error_union.payload == void;

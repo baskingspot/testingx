@@ -54,6 +54,18 @@ const print = debug.print;
 const Allocator = mem.Allocator;
 const builtin = @import("builtin");
 
+// Zig 0.17's `zig fmt` rewrites `@intFromEnum` to `@backingInt`, which Zig
+// 0.16 cannot compile. Keep the builtin out of the formatter's reach until
+// 0.16 support drops.
+// zig fmt: off
+fn enumToInt(e: anytype) @typeInfo(@TypeOf(e)).@"enum".tag_type {
+    return @intFromEnum(e);
+}
+// zig fmt: on
+
+// Zig 0.17 replaced `DebugAllocator` with `SafeAllocator`. The init and the
+// leak check differ, so probe the std shape, not the version.
+const safe_allocator = @hasDecl(std.heap, "SafeAllocator");
 var current_test: ?[]const u8 = null;
 var log_err_count: usize = 0;
 
@@ -76,10 +88,10 @@ pub fn log(
     args: anytype,
 ) void {
     @disableInstrumentation();
-    if (@intFromEnum(message_level) <= @intFromEnum(std.log.Level.err)) {
+    if (enumToInt(message_level) <= enumToInt(std.log.Level.err)) {
         log_err_count +|= 1;
     }
-    if (@intFromEnum(message_level) > @intFromEnum(testing.log_level)) return;
+    if (enumToInt(message_level) > enumToInt(testing.log_level)) return;
 
     // Inside a test the line belongs to that test: hold it, indented under the
     // result, the way `t.Log` does. Outside a test it goes straight out.
@@ -437,19 +449,13 @@ pub fn main(init: process.Init) u8 {
         process.fatal("testingx: cannot build the argument list: {t}", .{err});
     const parsed = parse(args) catch |err|
         process.fatal("testingx: cannot parse flags: {t}", .{err});
-    if (parsed.seed) |seed| {
-        testing.random_seed = seed;
-    }
-    switch (parsed.flags.shuffle) {
-        // Shuffling with no seed would otherwise always use 0. Pick a seed and
-        // print it in the summary so the order can be reproduced with --seed.
-        .on => if (parsed.seed == null) {
-            var seed_bytes: [4]u8 = undefined;
-            io.random(&seed_bytes);
-            testing.random_seed = mem.readInt(u32, &seed_bytes, .little);
-        },
-        else => {},
-    }
+    // The build graph no longer hands a seed to a simple-mode runner, so pick
+    // one here and print it in the summary; --seed reproduces the run.
+    testing.random_seed = parsed.seed orelse seed: {
+        var seed_bytes: [4]u8 = undefined;
+        io.random(&seed_bytes);
+        break :seed mem.readInt(u32, &seed_bytes, .little);
+    };
 
     if (builtin.test_functions.len == 0) {
         print("no tests found\n", .{});
@@ -710,7 +716,11 @@ fn runAttempts(options: RunOptions, test_fn: std.builtin.TestFn, name: []const u
 fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     current_test = friendlyName(test_fn.name);
     log_len = 0;
-    testing.allocator_instance = .{};
+    if (comptime safe_allocator) {
+        testing.allocator_instance = .init(std.heap.page_allocator, .{});
+    } else {
+        testing.allocator_instance = .{};
+    }
     // Keep test I/O allocations separate from the runner's I/O allocations.
     testing.environ = options.minimal.environ;
     testing.io_instance = .init(testing.allocator, .{
@@ -743,7 +753,10 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     const test_log_errs = log_err_count;
     const error_trace = @errorReturnTrace();
     testing.io_instance.deinit();
-    const leaked = testing.allocator_instance.deinit() == .leak;
+    const leaked = if (comptime safe_allocator)
+        testing.allocator_instance.deinit() != 0
+    else
+        testing.allocator_instance.deinit() == .leak;
     const elapsed = test_start.untilNow(options.io).raw;
     const logs = captureLogs(options.arena);
     testing.environ = options.minimal.environ;

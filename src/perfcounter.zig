@@ -64,7 +64,16 @@ pub const Metric = enum {
     }
 };
 
-pub const metric_count = @typeInfo(Metric).@"enum".fields.len;
+pub const metric_count = std.enums.values(Metric).len;
+
+// Zig 0.17's `zig fmt` rewrites `@intFromEnum` to `@backingInt`, which Zig
+// 0.16 cannot compile. Keep the builtin out of the formatter's reach until
+// 0.16 support drops.
+// zig fmt: off
+fn enumToInt(e: anytype) @typeInfo(@TypeOf(e)).@"enum".tag_type {
+    return @intFromEnum(e);
+}
+// zig fmt: on
 
 const Read = extern struct {
     value: u64,
@@ -96,11 +105,11 @@ pub const Counters = struct {
             for (std.enums.values(Metric)) |metric| {
                 var attr: linux.perf_event_attr = .{
                     .type = .HARDWARE,
-                    .config = @intFromEnum(metric.hw()),
+                    .config = enumToInt(metric.hw()),
                     .read_format = format_time,
                     .flags = .{ .disabled = true, .exclude_kernel = true, .exclude_hv = true },
                 };
-                self.fds[@intFromEnum(metric)] = std.posix.perf_event_open(
+                self.fds[enumToInt(metric)] = std.posix.perf_event_open(
                     &attr,
                     0,
                     -1,
@@ -164,11 +173,11 @@ pub const Counters = struct {
     /// Whether the kernel actually ran this counter; zero would be a lie
     /// otherwise.
     pub fn available(self: *const Counters, metric: Metric) bool {
-        return self.ran[@intFromEnum(metric)];
+        return self.ran[enumToInt(metric)];
     }
 
     pub fn count(self: *const Counters, metric: Metric) u64 {
-        return self.totals[@intFromEnum(metric)];
+        return self.totals[enumToInt(metric)];
     }
 
     pub fn isOpen(self: *const Counters) bool {

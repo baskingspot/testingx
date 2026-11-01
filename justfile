@@ -65,10 +65,13 @@ guide: api
 doc-deploy: doc
     wrangler deploy
 
+# Z011 is the Zig 0.17 deprecation of std.fmt.allocPrint and bufPrint. They
+# are the only spelling that compiles on 0.16 too. Drop this flag with 0.16
+# support.
 [doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, the ast-grep rules, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
 [group("lint")]
 lint:
-    ziglint
+    ziglint --ignore Z011
     baskingspot-lint src
     zig fmt --check src build.zig
     nix fmt -- --ci
@@ -85,6 +88,10 @@ fmt:
     oxfmt README.md AGENTS.md docs/content docs/config.toml wrangler.jsonc .github
     just --fmt
 
-[doc("Everything CI runs: the tests and checks, lint, and the docs build")]
+[doc("The per-version gate: unit tests, fixtures, and the cross builds")]
 [group("ci")]
-ci: test lint cross doc
+check: test cross
+
+[doc("Everything CI runs: the gate, lint, and the docs build")]
+[group("ci")]
+ci: check lint doc

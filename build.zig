@@ -66,8 +66,7 @@ pub fn build(b: *std.Build) void {
     });
     const run_tests = b.addRunArtifact(tests);
     run_tests.has_side_effects = true; // always run tests
-    run_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}));
-    if (b.args) |args| run_tests.addArgs(args);
+    passthruArgs(b, run_tests);
 
     const test_step = b.step("test", "Run unit tests and runner checks");
     test_step.dependOn(&run_tests.step);
@@ -152,7 +151,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("benchmarks/bench.zig"),
         .target = target,
     });
-    if (b.args) |args| run_bench.addArgs(args);
+    passthruArgs(b, run_bench);
 
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
@@ -398,4 +397,14 @@ fn addRunnerCheck(
     const run = addRunnerRun(b, parent, tests, exit_code);
     run.expectStdOutEqual("");
     return run;
+}
+
+/// `b.args` (removed in Zig 0.17) and `Run.addPassthruArgs` are the same
+/// feature on either side of the split. Probe the build API, not the version.
+fn passthruArgs(b: *std.Build, run: *std.Build.Step.Run) void {
+    if (comptime @hasDecl(std.Build.Step.Run, "addPassthruArgs")) {
+        run.addPassthruArgs();
+    } else if (b.args) |args| {
+        run.addArgs(args);
+    }
 }

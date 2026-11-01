@@ -6,7 +6,7 @@ A test runner that replaces the built-in one, benchmarks that sit beside your te
 
 The test runner writes plain text to stderr. A terminal gets colored dots; a pipe or a CI log gets one line per failure and nothing for passes, which is what `go test` prints. The benchmark side follows Go's `testing.B`: a benchmark is a function that loops, and the output is the Go benchmark format, so `benchstat` compares two runs without any glue. The fixture side reads `@embedFile` bytes: base64 and hex blobs decode at comptime, and a txtar archive becomes a name-indexed set of sections.
 
-All of it is one dependency and needs Zig 0.16.
+All of it is one dependency and needs Zig 0.16 or 0.17.
 
 - [Your first benchmark](#your-first-benchmark): write a suite, wire the executable, compare two runs.
 - [Test runner flags](#test-runner-flags): formats, filtering, timeouts, flake hunting.
@@ -38,8 +38,11 @@ const tests = b.addTest(.{
     .test_runner = .{ .path = testingx.path("src/runner.zig"), .mode = .simple },
 });
 const run_tests = b.addRunArtifact(tests);
-run_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}));
+run_tests.addPassthruArgs();
 ```
+
+On Zig 0.16, `Run.addPassthruArgs` does not exist yet. Forward the flags with
+`if (b.args) |args| run_tests.addArgs(args);` instead.
 
 `mode = .simple` is what skips the binary protocol the built-in runner uses. That protocol is also why writing to stdout in a test could deadlock; with the simple mode, it cannot.
 
@@ -47,7 +50,7 @@ The simple mode also means the run step declares no outputs, so Zig treats it as
 
 The runner file stays in the dependency. Do not import it from your code: a `test_runner` source compiles as its own module, and a file cannot belong to two modules.
 
-Passing the build's seed through means a failing randomized test prints the seed that reproduces it. The summary always ends with `(seed: 0x...)`.
+The runner picks a seed when `--seed` is not given and prints it at the end of the summary, `(seed: 0x...)`, so a failing randomized test can be reproduced with `--seed`.
 
 ## What you get
 
@@ -59,7 +62,7 @@ Without a terminal, passing tests print nothing. A failure prints a block:
     tests/fixtures.zig:20:5: 0x... in test.intentional failure (fixtures)
         try testing.expect(1 == 2);
         ^
-testingx: 1 passed, 1 failed, 1 skipped (of 3 total) in 110ms (seed: 0x0)
+testingx: 1 passed, 1 failed, 1 skipped (of 3 total) in 110ms (seed: 0x9d2c4a71)
 TESTS FAILED
 ```
 
@@ -121,7 +124,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("bench/bench.zig"),
         .imports = &.{.{ .name = "mylib", .module = mylib_mod }},
     });
-    if (b.args) |args| run_bench.addArgs(args);
+    run_bench.addPassthruArgs(); // Zig 0.16: if (b.args) |args| run_bench.addArgs(args);
     b.step("bench", "Run benchmarks").dependOn(&run_bench.step);
 }
 ```
@@ -175,7 +178,7 @@ zig build test -- --format=testname --filter=^fixtures.test.skip demonstration$
 | `--list`               | off                            | Print the selected test names to stdout and run nothing                        |
 | `--artifacts=DIR`      | off                            | Give each test `DIR/<name>/` for files worth keeping when it fails             |
 | `--allow-empty-filter` | off                            | A filter that matches nothing prints a zero summary and passes                 |
-| `--seed=N`             | build seed                     | Random seed, printed in the summary                                            |
+| `--seed=N`             | none (a seed is picked)        | Seed for shuffle and reproduction; printed in the summary                      |
 | `--timeout=D`          | `10m`                          | Stop after D (`500ms`, `10m`); `off` disables. Names the test it was stuck in. |
 | `--count=N`            | 1                              | Run the whole suite N times                                                    |
 | `--rerun-fails=N`      | off                            | Retry failed tests up to N attempts; a retry that passes is reported as flaky  |
@@ -244,7 +247,7 @@ Filters match the fully-qualified test name, which includes the module path: `fi
 `--rerun-fails=N` reruns only the failures. A test that passes on a retry is reported as flaky and does not fail the exit code:
 
 ```text
-testingx: 0 passed, 0 failed, 0 skipped, 1 flaky (of 1 total) in 114ms (seed: 0x0)
+testingx: 0 passed, 0 failed, 0 skipped, 1 flaky (of 1 total) in 114ms (seed: 0x6b1f0c2e)
 testingx: flaky: flaky demonstration
 ALL TESTS PASSED
 ```

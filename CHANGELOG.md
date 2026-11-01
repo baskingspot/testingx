@@ -5,6 +5,16 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- testingx builds with Zig 0.16 and 0.17. `minimum_zig_version` stays
+  `0.16.0`, and CI tests both versions.
+- The runner picks a random seed when `--seed` is not given and prints it in
+  the summary. The build no longer passes `b.graph.random_seed`, which Zig
+  0.17 removed.
+- In `build.zig`, forward the flags after `--` with `run.addPassthruArgs()`
+  on Zig 0.17. On Zig 0.16, use `if (b.args) |args| run.addArgs(args)`.
+
 ## [0.3.0] - 2026-10-31
 
 ### Changed

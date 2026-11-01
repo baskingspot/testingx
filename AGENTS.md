@@ -19,7 +19,7 @@ A test runner that replaces the built-in one, and benchmarks that sit beside you
 
 ## Environment
 
-Zig 0.16 only. The flake is the tool contract, from `baskingspot/nix`: `nix develop` provides Zig, `ziglint`, the docs tools, and `benchstat`, and nothing comes from the system PATH. The justfile is the command interface: `just test`, `just bench`, `just bench-e2e`, `just doc`, `just lint`, `just ci`. Run `just fmt` before you commit.
+Zig 0.16 and 0.17. The flake is the tool contract, from `baskingspot/nix`: `nix develop` is the current stable, Zig 0.17, and `nix develop .#zig-old` is Zig 0.16. Both provide `ziglint`, the docs tools, and `benchstat`, and nothing comes from the system PATH. The justfile is the command interface: `just test`, `just bench`, `just bench-e2e`, `just check`, `just doc`, `just lint`, `just ci`. CI runs `just ci` on the default shell and `just check` on `zig-old`. Run `just fmt` before you commit.
 
 ## Rules
 
@@ -41,6 +41,7 @@ Change these only together with the fixture checks in `build.zig`, which assert 
 ## Traps
 
 - Do not import `src/runner.zig` from another file, and do not import another file from it. The second fails with `file exists in modules 'root' and 'root'`.
+- Do not add `@intFromEnum` outside the `enumToInt` helper in `src/runner.zig` and `src/perfcounter.zig`. Zig 0.17's `zig fmt` rewrites it to `@backingInt`, which 0.16 cannot compile. The `// zig fmt: off` around the helper is what keeps both formatters in agreement.
 - Do not add `has_side_effects` to test runs. In `.mode = .simple` the step declares no outputs, and Zig already reruns it.
 - Environment variables set a default and flags win: `TESTINGX_FORMAT`, `TESTINGX_FILTER`, `TESTINGX_TIMEOUT`, `TESTINGX_FAIL_FAST`, `TESTINGX_ALLOW_EMPTY_FILTER`, `NO_COLOR`, plus `TESTINGX_BENCH_FILTER` and `TESTINGX_BENCH_JSONL` for benchmarks. The fixture checks strip them from the ambient environment.
 - The docs build is part of `just ci` and fails on an unlabeled code fence.
