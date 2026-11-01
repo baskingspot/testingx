@@ -47,6 +47,21 @@ const testing = std.testing;
 const debug = std.debug;
 const process = std.process;
 const Io = std.Io;
+
+// `std.fmt.allocPrint`/`bufPrint` are the only spelling that compiles on
+// 0.16; 0.17 moved them to `Allocator.print` and `mem.print`. Lint runs
+// against the 0.16 std (`ziglint-0-16`), so the fallback is not deprecated.
+// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
+fn allocPrint(a: Allocator, comptime format: []const u8, args: anytype) ![]u8 {
+    if (comptime @hasDecl(Allocator, "print")) return a.print(format, args);
+    return std.fmt.allocPrint(a, format, args);
+}
+
+// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
+fn bufPrint(buf: []u8, comptime format: []const u8, args: anytype) ![]u8 {
+    if (comptime @hasDecl(mem, "print")) return mem.print(buf, format, args);
+    return std.fmt.bufPrint(buf, format, args);
+}
 const ascii = std.ascii;
 const mem = std.mem;
 const time = std.time;
@@ -99,7 +114,7 @@ pub fn log(
         const indented = "    [" ++ @tagName(scope) ++
             "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n";
         const rest = log_buffer[log_len..];
-        const written = std.fmt.bufPrint(rest, indented, args) catch {
+        const written = bufPrint(rest, indented, args) catch {
             log_len = log_buffer.len;
             return;
         };
@@ -189,19 +204,19 @@ fn collectArgs(
     var args: std.ArrayList([]const u8) = .empty;
     try args.append(arena, argv[0]);
     if (env.format) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--format={s}", .{value}));
+        try args.append(arena, try allocPrint(arena, "--format={s}", .{value}));
     }
     if (env.filter) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--filter={s}", .{value}));
+        try args.append(arena, try allocPrint(arena, "--filter={s}", .{value}));
     }
     if (env.skip) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--skip={s}", .{value}));
+        try args.append(arena, try allocPrint(arena, "--skip={s}", .{value}));
     }
     if (env.artifacts) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--artifacts={s}", .{value}));
+        try args.append(arena, try allocPrint(arena, "--artifacts={s}", .{value}));
     }
     if (env.timeout) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--timeout={s}", .{value}));
+        try args.append(arena, try allocPrint(arena, "--timeout={s}", .{value}));
     }
     if (envBool(env.fail_fast)) |on| {
         if (on) try args.append(arena, "--fail-fast");

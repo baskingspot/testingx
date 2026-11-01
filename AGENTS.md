@@ -23,6 +23,7 @@ Zig 0.16 and 0.17. The flake is the tool contract, from `baskingspot/nix`: `nix 
 
 ## Rules
 
+- Lint with `ziglint-0-16`, not `ziglint`: the wrapper points ziglint at the 0.16 std, so 0.17-only deprecations do not fire while 0.16 is supported.
 - Commit messages are one line, `area: summary`, and every commit is signed. Do not rewrite pushed history.
 - Gate commands on their exit codes, and claim only what you ran.
 - Format with `zig fmt` and lint with `ziglint`. `just fmt` and `just lint` run both. `.ziglint.zon` covers `build.zig`, `src`, `benchmarks`, and `tests`; keep those paths.

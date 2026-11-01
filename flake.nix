@@ -25,7 +25,12 @@
       perSystem =
         { pkgs, config, ... }:
         let
-          project = with pkgs; [ goperf ];
+          project = [
+            pkgs.goperf
+            # Lint against the oldest supported Zig's std, so 0.17-only
+            # deprecations do not fire while 0.16 is supported.
+            config.packages."ziglint-0-16"
+          ];
         in
         {
           devShells.default = pkgs.mkShell {

@@ -47,6 +47,21 @@ const testing = std.testing;
 const assert = std.debug.assert;
 const print = std.debug.print;
 const doNotOptimizeAway = mem.doNotOptimizeAway;
+
+// `std.fmt.allocPrint`/`bufPrint` are the only spelling that compiles on
+// 0.16; 0.17 moved them to `Allocator.print` and `mem.print`. Lint runs
+// against the 0.16 std (`ziglint-0-16`), so the fallback is not deprecated.
+// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
+fn allocPrint(a: Allocator, comptime format: []const u8, args: anytype) ![]u8 {
+    if (comptime @hasDecl(Allocator, "print")) return a.print(format, args);
+    return std.fmt.allocPrint(a, format, args);
+}
+
+// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
+fn bufPrint(buf: []u8, comptime format: []const u8, args: anytype) ![]u8 {
+    if (comptime @hasDecl(mem, "print")) return mem.print(buf, format, args);
+    return std.fmt.bufPrint(buf, format, args);
+}
 const Alignment = mem.Alignment;
 const builtin = @import("builtin");
 
@@ -225,7 +240,7 @@ fn collectArgs(
     var args: std.ArrayList([]const u8) = .empty;
     try args.append(arena, argv[0]);
     if (env.filter) |value| {
-        try args.append(arena, try std.fmt.allocPrint(arena, "--filter={s}", .{value}));
+        try args.append(arena, try allocPrint(arena, "--filter={s}", .{value}));
     }
     if (envBool(env.jsonl)) |on| {
         if (on) try args.append(arena, "--jsonl");
@@ -812,12 +827,12 @@ pub const B = struct {
     }
 
     fn runObjdump(self: *B, writer: *Io.Writer, target: DisasmTarget) !void {
-        const start = try std.fmt.allocPrint(
+        const start = try allocPrint(
             self.internal_allocator,
             "--start-address=0x{x}",
             .{target.symbol.address},
         );
-        const stop = try std.fmt.allocPrint(
+        const stop = try allocPrint(
             self.internal_allocator,
             "--stop-address=0x{x}",
             .{target.symbol.end()},
@@ -896,7 +911,7 @@ pub const B = struct {
         const full_name = if (self.name.len == 0)
             name
         else
-            try std.fmt.allocPrint(self.internal_allocator, "{s}/{s}", .{ self.name, name });
+            try allocPrint(self.internal_allocator, "{s}/{s}", .{ self.name, name });
         defer if (self.name.len != 0) self.internal_allocator.free(full_name);
 
         if (self.filter_pattern) |pattern| {
@@ -1254,7 +1269,7 @@ pub fn benchmark(allocator: Allocator, io: Io, func: Function, options: Options)
 fn filterMatches(pattern: []const u8, name: []const u8) bool {
     if (filter.matchesAny(pattern, name)) return true;
     var buf: [512]u8 = undefined;
-    const printed = std.fmt.bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
+    const printed = bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
     return filter.matchesAny(pattern, printed);
 }
 
@@ -1263,7 +1278,7 @@ fn filterMatches(pattern: []const u8, name: []const u8) bool {
 fn filterMayMatchChild(pattern: []const u8, name: []const u8) bool {
     if (filter.mayMatchAnyChild(pattern, name)) return true;
     var buf: [512]u8 = undefined;
-    const printed = std.fmt.bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
+    const printed = bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
     return filter.mayMatchAnyChild(pattern, printed);
 }
 
@@ -1438,7 +1453,7 @@ const Environment = struct {
             .cpu = builtin.cpu.model.name,
             .mode = @tagName(builtin.mode),
         };
-        const target = try std.fmt.bufPrint(&environment.target_buf, "{s}-{s}-{s}", .{
+        const target = try bufPrint(&environment.target_buf, "{s}-{s}-{s}", .{
             @tagName(builtin.target.cpu.arch),
             @tagName(builtin.target.os.tag),
             @tagName(builtin.target.abi),
