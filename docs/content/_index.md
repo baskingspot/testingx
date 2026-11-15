@@ -6,7 +6,7 @@ A test runner that replaces the built-in one, benchmarks that sit beside your te
 
 The test runner writes plain text to stderr. A terminal gets colored dots; a pipe or a CI log gets one line per failure and nothing for passes, which is what `go test` prints. The benchmark side follows Go's `testing.B`: a benchmark is a function that loops, and the output is the Go benchmark format, so `benchstat` compares two runs without any glue. The fixture side reads `@embedFile` bytes: base64 and hex blobs decode at comptime, and a txtar archive becomes a name-indexed set of sections.
 
-All of it is one dependency and needs Zig 0.16 or 0.17.
+All of it is one dependency and needs Zig 0.17.
 
 - [Your first benchmark](#your-first-benchmark): write a suite, wire the executable, compare two runs.
 - [Test runner flags](#test-runner-flags): formats, filtering, timeouts, flake hunting.
@@ -40,9 +40,6 @@ const tests = b.addTest(.{
 const run_tests = b.addRunArtifact(tests);
 run_tests.addPassthruArgs();
 ```
-
-On Zig 0.16, `Run.addPassthruArgs` does not exist yet. Forward the flags with
-`if (b.args) |args| run_tests.addArgs(args);` instead.
 
 `mode = .simple` is what skips the binary protocol the built-in runner uses. That protocol is also why writing to stdout in a test could deadlock; with the simple mode, it cannot.
 
@@ -124,7 +121,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("bench/bench.zig"),
         .imports = &.{.{ .name = "mylib", .module = mylib_mod }},
     });
-    run_bench.addPassthruArgs(); // Zig 0.16: if (b.args) |args| run_bench.addArgs(args);
+    run_bench.addPassthruArgs();
     b.step("bench", "Run benchmarks").dependOn(&run_bench.step);
 }
 ```

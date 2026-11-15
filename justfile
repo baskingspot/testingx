@@ -68,7 +68,7 @@ doc-deploy: doc
 [doc("Lint Zig, Nix, Markdown, the workflows, and this justfile: ziglint, the ast-grep rules, zig fmt, nix fmt, oxfmt, actionlint, zizmor, and just --fmt")]
 [group("lint")]
 lint:
-    ziglint-0-16
+    ziglint-0-17
     baskingspot-lint src
     zig fmt --check src build.zig
     nix fmt -- --ci
@@ -85,7 +85,7 @@ fmt:
     oxfmt README.md AGENTS.md docs/content docs/config.toml wrangler.jsonc .github
     just --fmt
 
-[doc("The per-version gate: unit tests, fixtures, and the cross builds")]
+[doc("The gate: unit tests, fixtures, and the cross builds")]
 [group("ci")]
 check: test cross
 

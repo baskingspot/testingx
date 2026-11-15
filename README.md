@@ -5,9 +5,9 @@
   </picture>
 </h1>
 
-A plain-text test runner, Go-style benchmarks, and compile-time test fixtures for Zig 0.16 and 0.17.
+A plain-text test runner, Go-style benchmarks, and compile-time test fixtures for Zig 0.17.
 
-Zig's built-in test runner draws a progress display and speaks a binary protocol to the build runner, which is why output piped to a file is unreadable and why writing to stdout in a test can deadlock. testingx replaces it with plain text on stderr. The benchmark half follows Go's `testing.B` and prints the Go benchmark format, so `benchstat` compares two runs with no glue. The fixture helpers keep binary test data as base64 or hex text and organize fixtures in txtar archives, all read at compile time. One dependency, no dependencies of its own, Zig 0.16 and 0.17.
+Zig's built-in test runner draws a progress display and speaks a binary protocol to the build runner, which is why output piped to a file is unreadable and why writing to stdout in a test can deadlock. testingx replaces it with plain text on stderr. The benchmark half follows Go's `testing.B` and prints the Go benchmark format, so `benchstat` compares two runs with no glue. The fixture helpers keep binary test data as base64 or hex text and organize fixtures in txtar archives, all read at compile time. One dependency, no dependencies of its own, Zig 0.17.
 
 ## What is in it
 
@@ -44,12 +44,9 @@ const run_tests = b.addRunArtifact(tests);
 run_tests.addPassthruArgs();
 ```
 
-On Zig 0.16, `Run.addPassthruArgs` does not exist yet. Forward the flags with
-`if (b.args) |args| run_tests.addArgs(args);` instead.
-
 Benchmarks take one more step. `testingx.addBench` builds the suite and returns the run step. The [guide](https://baskingspot.dev/testingx/#your-first-benchmark) has the wiring, including the `.imports` list the suite needs.
 
-testingx builds with Zig 0.16 and 0.17.
+testingx builds with Zig 0.17.
 
 ## Documentation
 

@@ -66,14 +66,9 @@ pub const Metric = enum {
 
 pub const metric_count = std.enums.values(Metric).len;
 
-// Zig 0.17's `zig fmt` rewrites `@intFromEnum` to `@backingInt`, which Zig
-// 0.16 cannot compile. Keep the builtin out of the formatter's reach until
-// 0.16 support drops.
-// zig fmt: off
 fn enumToInt(e: anytype) @typeInfo(@TypeOf(e)).@"enum".tag_type {
-    return @intFromEnum(e);
+    return @backingInt(e);
 }
-// zig fmt: on
 
 const Read = extern struct {
     value: u64,

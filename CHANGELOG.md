@@ -5,6 +5,12 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- Zig 0.16 support: `minimum_zig_version` is `0.17.0`, and
+  `run.addPassthruArgs()` replaces `if (b.args) |args| run.addArgs(args)` for
+  forwarding flags after `--`. Build with Zig 0.17 or newer.
+
 ## [0.4.0] - 2026-11-02
 
 ### Changed

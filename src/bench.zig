@@ -48,20 +48,6 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 const doNotOptimizeAway = mem.doNotOptimizeAway;
 
-// `std.fmt.allocPrint`/`bufPrint` are the only spelling that compiles on
-// 0.16; 0.17 moved them to `Allocator.print` and `mem.print`. Lint runs
-// against the 0.16 std (`ziglint-0-16`), so the fallback is not deprecated.
-// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
-fn allocPrint(a: Allocator, comptime format: []const u8, args: anytype) ![]u8 {
-    if (comptime @hasDecl(Allocator, "print")) return a.print(format, args);
-    return std.fmt.allocPrint(a, format, args);
-}
-
-// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
-fn bufPrint(buf: []u8, comptime format: []const u8, args: anytype) ![]u8 {
-    if (comptime @hasDecl(mem, "print")) return mem.print(buf, format, args);
-    return std.fmt.bufPrint(buf, format, args);
-}
 const Alignment = mem.Alignment;
 const builtin = @import("builtin");
 
@@ -240,7 +226,7 @@ fn collectArgs(
     var args: std.ArrayList([]const u8) = .empty;
     try args.append(arena, argv[0]);
     if (env.filter) |value| {
-        try args.append(arena, try allocPrint(arena, "--filter={s}", .{value}));
+        try args.append(arena, try arena.print("--filter={s}", .{value}));
     }
     if (envBool(env.jsonl)) |on| {
         if (on) try args.append(arena, "--jsonl");
@@ -650,15 +636,8 @@ pub const B = struct {
     pub fn addMod(self: *B, comptime mod: type) !void {
         if (self.executing) return Error.InvalidPhase;
         @setEvalBranchQuota(100_000);
-        // Zig 0.17 replaced `decls` with `decl_names` on the struct type info.
-        if (comptime @hasField(std.builtin.Type.Struct, "decl_names")) {
-            inline for (@typeInfo(mod).@"struct".decl_names) |decl_name| {
-                try self.addBenchmarkDecl(mod, decl_name);
-            }
-        } else {
-            inline for (@typeInfo(mod).@"struct".decls) |decl| {
-                try self.addBenchmarkDecl(mod, decl.name);
-            }
+        inline for (@typeInfo(mod).@"struct".decl_names) |decl_name| {
+            try self.addBenchmarkDecl(mod, decl_name);
         }
     }
 
@@ -672,7 +651,7 @@ pub const B = struct {
     }
 
     fn isBenchmarkDecl(comptime mod: type, comptime decl_name: []const u8) bool {
-        // Either list already holds only public declarations from another module.
+        // `decl_names` already holds only public declarations from another module.
         if (!isBenchmarkName(decl_name)) return false;
         return isBenchmarkFunction(@field(mod, decl_name));
     }
@@ -692,11 +671,7 @@ pub const B = struct {
             else => return false,
         };
 
-        if (comptime @hasField(std.builtin.Type.Fn, "param_types")) {
-            if (fn_info.param_types.len != 1 or fn_info.param_types[0] != *B) return false;
-        } else {
-            if (fn_info.params.len != 1 or fn_info.params[0].type != *B) return false;
-        }
+        if (fn_info.param_types.len != 1 or fn_info.param_types[0] != *B) return false;
         const return_type = fn_info.return_type orelse return false;
         return @typeInfo(return_type) == .error_union and
             @typeInfo(return_type).error_union.payload == void;
@@ -807,8 +782,8 @@ pub const B = struct {
     };
 
     fn resolveSymbol(self: *B, func: Function) !DisasmTarget {
-        // Windows debug info in Zig 0.16.0 does not compile, and objdump is not
-        // there either, so the whole body stays unanalyzed off POSIX-ELF.
+        // Windows debug info does not compile there, and objdump is not there
+        // either, so the whole body stays unanalyzed off POSIX-ELF.
         if (comptime builtin.os.tag == .windows) {
             return error.UnsupportedPlatform;
         } else {
@@ -827,13 +802,11 @@ pub const B = struct {
     }
 
     fn runObjdump(self: *B, writer: *Io.Writer, target: DisasmTarget) !void {
-        const start = try allocPrint(
-            self.internal_allocator,
+        const start = try self.internal_allocator.print(
             "--start-address=0x{x}",
             .{target.symbol.address},
         );
-        const stop = try allocPrint(
-            self.internal_allocator,
+        const stop = try self.internal_allocator.print(
             "--stop-address=0x{x}",
             .{target.symbol.end()},
         );
@@ -911,7 +884,7 @@ pub const B = struct {
         const full_name = if (self.name.len == 0)
             name
         else
-            try allocPrint(self.internal_allocator, "{s}/{s}", .{ self.name, name });
+            try self.internal_allocator.print("{s}/{s}", .{ self.name, name });
         defer if (self.name.len != 0) self.internal_allocator.free(full_name);
 
         if (self.filter_pattern) |pattern| {
@@ -1269,7 +1242,7 @@ pub fn benchmark(allocator: Allocator, io: Io, func: Function, options: Options)
 fn filterMatches(pattern: []const u8, name: []const u8) bool {
     if (filter.matchesAny(pattern, name)) return true;
     var buf: [512]u8 = undefined;
-    const printed = bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
+    const printed = mem.print(&buf, "Benchmark{s}", .{name}) catch return false;
     return filter.matchesAny(pattern, printed);
 }
 
@@ -1278,7 +1251,7 @@ fn filterMatches(pattern: []const u8, name: []const u8) bool {
 fn filterMayMatchChild(pattern: []const u8, name: []const u8) bool {
     if (filter.mayMatchAnyChild(pattern, name)) return true;
     var buf: [512]u8 = undefined;
-    const printed = bufPrint(&buf, "Benchmark{s}", .{name}) catch return false;
+    const printed = mem.print(&buf, "Benchmark{s}", .{name}) catch return false;
     return filter.mayMatchAnyChild(pattern, printed);
 }
 
@@ -1453,7 +1426,7 @@ const Environment = struct {
             .cpu = builtin.cpu.model.name,
             .mode = @tagName(builtin.mode),
         };
-        const target = try bufPrint(&environment.target_buf, "{s}-{s}-{s}", .{
+        const target = try mem.print(&environment.target_buf, "{s}-{s}-{s}", .{
             @tagName(builtin.target.cpu.arch),
             @tagName(builtin.target.os.tag),
             @tagName(builtin.target.abi),

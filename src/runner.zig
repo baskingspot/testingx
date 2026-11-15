@@ -48,20 +48,6 @@ const debug = std.debug;
 const process = std.process;
 const Io = std.Io;
 
-// `std.fmt.allocPrint`/`bufPrint` are the only spelling that compiles on
-// 0.16; 0.17 moved them to `Allocator.print` and `mem.print`. Lint runs
-// against the 0.16 std (`ziglint-0-16`), so the fallback is not deprecated.
-// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
-fn allocPrint(a: Allocator, comptime format: []const u8, args: anytype) ![]u8 {
-    if (comptime @hasDecl(Allocator, "print")) return a.print(format, args);
-    return std.fmt.allocPrint(a, format, args);
-}
-
-// ziglint-ignore: Z023 -- mirrors the std.fmt argument order
-fn bufPrint(buf: []u8, comptime format: []const u8, args: anytype) ![]u8 {
-    if (comptime @hasDecl(mem, "print")) return mem.print(buf, format, args);
-    return std.fmt.bufPrint(buf, format, args);
-}
 const ascii = std.ascii;
 const mem = std.mem;
 const time = std.time;
@@ -69,18 +55,10 @@ const print = debug.print;
 const Allocator = mem.Allocator;
 const builtin = @import("builtin");
 
-// Zig 0.17's `zig fmt` rewrites `@intFromEnum` to `@backingInt`, which Zig
-// 0.16 cannot compile. Keep the builtin out of the formatter's reach until
-// 0.16 support drops.
-// zig fmt: off
 fn enumToInt(e: anytype) @typeInfo(@TypeOf(e)).@"enum".tag_type {
-    return @intFromEnum(e);
+    return @backingInt(e);
 }
-// zig fmt: on
 
-// Zig 0.17 replaced `DebugAllocator` with `SafeAllocator`. The init and the
-// leak check differ, so probe the std shape, not the version.
-const safe_allocator = @hasDecl(std.heap, "SafeAllocator");
 var current_test: ?[]const u8 = null;
 var log_err_count: usize = 0;
 
@@ -114,7 +92,7 @@ pub fn log(
         const indented = "    [" ++ @tagName(scope) ++
             "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n";
         const rest = log_buffer[log_len..];
-        const written = bufPrint(rest, indented, args) catch {
+        const written = mem.print(rest, indented, args) catch {
             log_len = log_buffer.len;
             return;
         };
@@ -204,19 +182,19 @@ fn collectArgs(
     var args: std.ArrayList([]const u8) = .empty;
     try args.append(arena, argv[0]);
     if (env.format) |value| {
-        try args.append(arena, try allocPrint(arena, "--format={s}", .{value}));
+        try args.append(arena, try arena.print("--format={s}", .{value}));
     }
     if (env.filter) |value| {
-        try args.append(arena, try allocPrint(arena, "--filter={s}", .{value}));
+        try args.append(arena, try arena.print("--filter={s}", .{value}));
     }
     if (env.skip) |value| {
-        try args.append(arena, try allocPrint(arena, "--skip={s}", .{value}));
+        try args.append(arena, try arena.print("--skip={s}", .{value}));
     }
     if (env.artifacts) |value| {
-        try args.append(arena, try allocPrint(arena, "--artifacts={s}", .{value}));
+        try args.append(arena, try arena.print("--artifacts={s}", .{value}));
     }
     if (env.timeout) |value| {
-        try args.append(arena, try allocPrint(arena, "--timeout={s}", .{value}));
+        try args.append(arena, try arena.print("--timeout={s}", .{value}));
     }
     if (envBool(env.fail_fast)) |on| {
         if (on) try args.append(arena, "--fail-fast");
@@ -731,11 +709,7 @@ fn runAttempts(options: RunOptions, test_fn: std.builtin.TestFn, name: []const u
 fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     current_test = friendlyName(test_fn.name);
     log_len = 0;
-    if (comptime safe_allocator) {
-        testing.allocator_instance = .init(std.heap.page_allocator, .{});
-    } else {
-        testing.allocator_instance = .{};
-    }
+    testing.allocator_instance = .init(std.heap.page_allocator, .{});
     // Keep test I/O allocations separate from the runner's I/O allocations.
     testing.environ = options.minimal.environ;
     testing.io_instance = .init(testing.allocator, .{
@@ -768,10 +742,7 @@ fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
     const test_log_errs = log_err_count;
     const error_trace = @errorReturnTrace();
     testing.io_instance.deinit();
-    const leaked = if (comptime safe_allocator)
-        testing.allocator_instance.deinit() != 0
-    else
-        testing.allocator_instance.deinit() == .leak;
+    const leaked = testing.allocator_instance.deinit() != 0;
     const elapsed = test_start.untilNow(options.io).raw;
     const logs = captureLogs(options.arena);
     testing.environ = options.minimal.environ;
