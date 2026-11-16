@@ -687,7 +687,7 @@ const RunOptions = struct {
     artifacts: ?[]const u8,
 };
 
-fn runAttempts(options: RunOptions, test_fn: std.builtin.TestFn, name: []const u8) Attempts {
+fn runAttempts(options: RunOptions, test_fn: std.lang.TestFn, name: []const u8) Attempts {
     var had_failure = false;
     var attempt: usize = 1;
     while (true) : (attempt += 1) {
@@ -706,7 +706,7 @@ fn runAttempts(options: RunOptions, test_fn: std.builtin.TestFn, name: []const u
     }
 }
 
-fn runOne(options: RunOptions, test_fn: std.builtin.TestFn) RunResult {
+fn runOne(options: RunOptions, test_fn: std.lang.TestFn) RunResult {
     current_test = friendlyName(test_fn.name);
     log_len = 0;
     testing.allocator_instance = .init(std.heap.page_allocator, .{});
@@ -858,7 +858,7 @@ fn failureLike(result: RunResult) bool {
     return result.outcome == .fail or result.log_errs != 0 or result.leaked;
 }
 
-fn captureTrace(arena: Allocator, trace: *const std.builtin.StackTrace) ?[]const u8 {
+fn captureTrace(arena: Allocator, trace: *const std.lang.StackTrace) ?[]const u8 {
     var buffer: Io.Writer.Allocating = .init(arena);
     const terminal: Io.Terminal = .{ .writer = &buffer.writer, .mode = .no_color };
     debug.writeErrorReturnTrace(trace, terminal) catch return null;
