@@ -10,6 +10,11 @@ default:
 test:
     zig build test --summary all
 
+[doc("Fuzz fuzzBytes with the built-in runner, for example `just fuzz 100K`. A budget is required: without one the build runner waits")]
+[group("test")]
+fuzz LIMIT="10M":
+    zig build fuzz --fuzz={{ LIMIT }}
+
 [doc("Run benchmarks (ReleaseFast); args pass to the binary: just bench --benchtime=250ms --benchmem")]
 [group("test")]
 bench *ARGS:

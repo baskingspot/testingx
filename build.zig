@@ -92,6 +92,35 @@ pub fn build(b: *std.Build) void {
     });
     addFixtureChecks(b, test_step, fixtures);
 
+    // A fuzz-only root: it imports testingx for `fuzzBytes` and nothing else.
+    // Running it through our runner replays the corpus and the empty smoke
+    // input.
+    const fuzz_bytes_module = b.createModule(.{
+        .root_source_file = b.path("tests/fuzz_bytes.zig"),
+        .target = target,
+        .imports = &.{.{ .name = "testingx", .module = mod }},
+    });
+    const fuzz_bytes_tests = b.addTest(.{
+        .name = "fuzz-bytes",
+        .root_module = fuzz_bytes_module,
+        .test_runner = .{ .path = b.path("src/runner.zig"), .mode = .simple },
+    });
+    const run_fuzz_bytes = b.addRunArtifact(fuzz_bytes_tests);
+    run_fuzz_bytes.has_side_effects = true;
+    test_step.dependOn(&run_fuzz_bytes.step);
+
+    // The same root under the built-in runner. Fuzzing needs the server
+    // protocol and LLVM coverage counters, so this artifact is the only one
+    // that speaks them. Pass a budget: `zig build fuzz --fuzz=100K`.
+    const fuzz_bytes_builtin = b.addTest(.{
+        .name = "fuzz-bytes-builtin",
+        .root_module = fuzz_bytes_module,
+        .use_llvm = true,
+    });
+    const run_fuzz_bytes_builtin = b.addRunArtifact(fuzz_bytes_builtin);
+    const fuzz_step = b.step("fuzz", "Fuzz fuzzBytes with the built-in runner: --fuzz=N");
+    fuzz_step.dependOn(&run_fuzz_bytes_builtin.step);
+
     const timeout_fixture = b.addTest(.{
         .name = "timeout-fixture",
         .root_module = b.createModule(.{
@@ -171,6 +200,10 @@ pub fn build(b: *std.Build) void {
 
     const check = b.step("check", "Compile tests and the benchmark executable without running");
     check.dependOn(&tests.step);
+    // Compiling this fixture is the check that a fuzz-only module builds
+    // without the bench engine: it imports testingx for `fuzzBytes` alone.
+    check.dependOn(&fuzz_bytes_tests.step);
+    check.dependOn(&fuzz_bytes_builtin.step);
     check.dependOn(&addBenchExe(b, .{
         .module = mod,
         .root_source_file = b.path("benchmarks/bench.zig"),
