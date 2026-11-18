@@ -781,6 +781,12 @@ pub const B = struct {
         path: []const u8,
     };
 
+    /// The file this process was started from, which the kernel records at
+    /// /proc/self/exe. `--disasm` needs it when the debug info has no name.
+    fn executablePath(self: *B) ![]const u8 {
+        return std.process.executablePathAlloc(self.io, self.internal_allocator);
+    }
+
     fn resolveSymbol(self: *B, func: Function) !DisasmTarget {
         // Windows debug info does not compile there, and objdump is not there
         // either, so the whole body stays unanalyzed off POSIX-ELF.
@@ -790,7 +796,17 @@ pub const B = struct {
             const info = try std.debug.getSelfDebugInfo();
             const address = @intFromPtr(func);
             const slide = info.getModuleSlide(self.io, address) catch 0;
-            const path = try info.getModuleName(self.io, address);
+            // std builds its module list from `dl_iterate_phdr`, and glibc
+            // reports the main program there with an empty name. `getModuleName`
+            // turns that into `MissingDebugInfo` for every executable that links
+            // libc, though the file itself is intact. The main program is this
+            // process's own executable, and /proc/self/exe is where the kernel
+            // records it. A shared object carries a real name, so it never takes
+            // this branch.
+            const path = info.getModuleName(self.io, address) catch |err| switch (err) {
+                error.MissingDebugInfo => try self.executablePath(),
+                else => return err,
+            };
             const symbol = try symbols.lookup(
                 self.internal_allocator,
                 self.io,

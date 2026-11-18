@@ -214,6 +214,26 @@ pub fn build(b: *std.Build) void {
     );
     bench_bin_step.dependOn(&bench_bin.step);
 
+    // `--disasm` in a benchmark executable that links libc. glibc reports the
+    // main program through `dl_iterate_phdr` with an empty name, and std turns
+    // that into MissingDebugInfo, so this is the case that used to print "no
+    // symbol" for an intact binary (issue #5). The symbol table is ELF-only, so
+    // the check runs where the object format is ELF.
+    if (target.result.ofmt == .elf) {
+        const libc_bench = addBenchExe(b, .{
+            .module = mod,
+            .root_source_file = b.path("benchmarks/libc.zig"),
+            .target = target,
+        });
+        libc_bench.root_module.link_libc = true;
+
+        const disasm = b.addRunArtifact(libc_bench);
+        disasm.addArg("--disasm=Libc/getpid");
+        disasm.expectExitCode(0);
+        disasm.expectStdOutMatch("BenchmarkLibc/getpid\n  libc.benchmarkGetpid  ");
+        test_step.dependOn(&disasm.step);
+    }
+
     const check = b.step("check", "Compile tests and the benchmark executable without running");
     check.dependOn(&tests.step);
     // Compiling this fixture is the check that a fuzz-only module builds
