@@ -10,7 +10,12 @@ All notable changes to testingx are recorded here. The format follows
 - `testingx.fuzzBytes` adapts `std.testing.fuzz` to a byte-slice target:
   `fuzzBytes(context, max_len, testOne, options)` fills a `max_len` stack
   buffer and passes the slice to `testOne`. `max_len` is required and
-  comptime; there is no default bound.
+  comptime; there is no default bound. A corpus entry is the bytes the target
+  receives: `.corpus = &.{"hello"}` replays `hello`, because the adapter writes
+  the length that `Smith.slice` reads. Do not prefix seed files by hand. An
+  entry longer than `max_len` reaches the target as its first `max_len` bytes.
+  An input the fuzzer saved is already framed, so unwrap a crash file before
+  adding it to `.corpus`.
 
 ### Fixed
 
