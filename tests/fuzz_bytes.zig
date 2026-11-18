@@ -13,32 +13,37 @@ const testingx = @import("testingx");
 
 const max_len = 64;
 
-// In a replayed corpus, `Smith.slice` reads a little-endian u32 length and
-// then that many bytes. A raw string is not a slice input.
-const hello_seed = std.mem.toBytes(std.mem.nativeToLittle(u32, 5)) ++ "hello";
-const world_seed = std.mem.toBytes(std.mem.nativeToLittle(u32, 5)) ++ "world";
+// A seed file holds the bytes the target receives. `Smith.slice` reads a
+// length before the bytes, and the adapter writes that frame, so these stay
+// raw. The last entry is longer than `max_len`, and it must arrive truncated
+// rather than reinterpreted.
+const long_seed = "0123456789012345678901234567890123456789012345678901234567890123456789";
+const corpus = [_][]const u8{ "hello", "world", long_seed };
 
 const Replay = struct {
     index: usize = 0,
 
     fn one(self: *Replay, input: []const u8) anyerror!void {
-        // Fuzz mode does not replay the corpus through this callback. The
-        // expected-fail probe covers that path.
+        // Fuzz mode mutates rather than replaying the corpus, so these
+        // assertions only hold for a replay. The expected-fail probe covers
+        // the mutation path.
         if (builtin.fuzz) return;
 
-        const corpus = [_][]const u8{ "hello", "world", "" };
-        try testing.expect(self.index < corpus.len);
-        try testing.expectEqualStrings(corpus[self.index], input);
+        // An entry reaches the target as itself: `hello` as `hello`, no
+        // prefix in the file and nothing consumed on the way in. An entry
+        // longer than `max_len` arrives as its first `max_len` bytes, which
+        // is a truncation of the seed and not the length read back some
+        // other way.
+        const entry: []const u8 = if (self.index < corpus.len) corpus[self.index] else "";
+        try testing.expectEqualStrings(entry[0..@min(entry.len, max_len)], input);
         self.index += 1;
     }
 };
 
 test "fuzzBytes replays the corpus and one empty input" {
     var replay: Replay = .{};
-    try testingx.fuzzBytes(&replay, max_len, Replay.one, .{
-        .corpus = &.{ hello_seed, world_seed },
-    });
+    try testingx.fuzzBytes(&replay, max_len, Replay.one, .{ .corpus = &corpus });
     if (!builtin.fuzz) {
-        try testing.expectEqual(@as(usize, 3), replay.index);
+        try testing.expectEqual(corpus.len + 1, replay.index);
     }
 }
