@@ -5,6 +5,13 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `testingx.fuzzBytes` adapts `std.testing.fuzz` to a byte-slice target:
+  `fuzzBytes(context, max_len, testOne, options)` fills a `max_len` stack
+  buffer and passes the slice to `testOne`. `max_len` is required and
+  comptime; there is no default bound.
+
 ## [0.5.0] - 2026-11-16
 
 ### Removed

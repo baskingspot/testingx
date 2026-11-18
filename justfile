@@ -10,6 +10,25 @@ default:
 test:
     zig build test --summary all
 
+[doc("Fuzz fuzzBytes with the built-in runner, for example `just fuzz 100K`. A budget is required: without one the build runner waits")]
+[group("test")]
+fuzz LIMIT="10M":
+    zig build fuzz --fuzz={{ LIMIT }}
+
+[doc("Expected-fail mutation probe: passes when the fuzzer dies with error.CorpusDidNotContainThisInput. Not part of ci")]
+[group("test")]
+fuzz-probe:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    output=$(zig build fuzz-probe --fuzz=200K 2>&1)
+    printf '%s\n' "$output"
+    if printf '%s' "$output" | grep -q "failed with error.CorpusDidNotContainThisInput"; then
+        echo "fuzz-probe: expected mutation failure observed"
+    else
+        echo "fuzz-probe: expected mutation failure did not happen" >&2
+        exit 1
+    fi
+
 [doc("Run benchmarks (ReleaseFast); args pass to the binary: just bench --benchtime=250ms --benchmem")]
 [group("test")]
 bench *ARGS:
