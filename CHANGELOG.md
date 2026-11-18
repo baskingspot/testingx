@@ -12,6 +12,14 @@ All notable changes to testingx are recorded here. The format follows
   buffer and passes the slice to `testOne`. `max_len` is required and
   comptime; there is no default bound.
 
+### Fixed
+
+- `--disasm` resolves the symbol in a benchmark executable that links libc.
+  `std.debug.getModuleName` reports `MissingDebugInfo` for the main program
+  when the loader names it with an empty string, so the lookup now falls back
+  to the running executable. If your benchmarks call C code, `link_libc = true`
+  no longer costs you disassembly.
+
 ## [0.5.0] - 2026-11-16
 
 ### Removed
