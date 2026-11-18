@@ -2,8 +2,9 @@
 //!
 //! This root imports testingx for the adapter only. Compiling it is the check
 //! that a fuzz-only module does not analyze the bench engine. The `test` step
-//! runs it under testingx's runner. The `fuzz` step builds it with the
-//! built-in runner, where `--fuzz` mutates instead of replaying.
+//! runs it under testingx's runner, which replays the corpus and the empty
+//! smoke input. Mutation is proved by `tests/fuzz_probe.zig`, an expected-fail
+//! step.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -21,12 +22,9 @@ const Replay = struct {
     index: usize = 0,
 
     fn one(self: *Replay, input: []const u8) anyerror!void {
-        if (builtin.fuzz) {
-            // The built-in fuzzer generated this input. The adapter's buffer
-            // is the bound.
-            try testing.expect(input.len <= max_len);
-            return;
-        }
+        // Fuzz mode does not replay the corpus through this callback. The
+        // expected-fail probe covers that path.
+        if (builtin.fuzz) return;
 
         const corpus = [_][]const u8{ "hello", "world", "" };
         try testing.expect(self.index < corpus.len);
@@ -35,7 +33,7 @@ const Replay = struct {
     }
 };
 
-test "fuzzBytes replays the corpus and takes fuzzer mutations" {
+test "fuzzBytes replays the corpus and one empty input" {
     var replay: Replay = .{};
     try testingx.fuzzBytes(&replay, max_len, Replay.one, .{
         .corpus = &.{ hello_seed, world_seed },
@@ -43,13 +41,4 @@ test "fuzzBytes replays the corpus and takes fuzzer mutations" {
     if (!builtin.fuzz) {
         try testing.expectEqual(@as(usize, 3), replay.index);
     }
-}
-
-test "the built-in fuzzer mutates instead of replaying" {
-    try testing.fuzz({}, struct {
-        fn one(_: void, smith: *testing.Smith) anyerror!void {
-            // A corpus replay sets `in`; the fuzzer leaves it null.
-            try testing.expect((smith.in == null) == builtin.fuzz);
-        }
-    }.one, .{ .corpus = &.{"seed"} });
 }

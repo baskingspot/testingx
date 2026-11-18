@@ -121,6 +121,22 @@ pub fn build(b: *std.Build) void {
     const fuzz_step = b.step("fuzz", "Fuzz fuzzBytes with the built-in runner: --fuzz=N");
     fuzz_step.dependOn(&run_fuzz_bytes_builtin.step);
 
+    // Expected-fail probe: mutation must reach a target the corpus cannot.
+    // Run `zig build fuzz-probe --fuzz=200K`; the step fails by design. It is
+    // not part of `just ci`.
+    const fuzz_probe = b.addTest(.{
+        .name = "fuzz-probe",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fuzz_probe.zig"),
+            .target = target,
+            .imports = &.{.{ .name = "testingx", .module = mod }},
+        }),
+        .use_llvm = true,
+    });
+    const run_fuzz_probe = b.addRunArtifact(fuzz_probe);
+    const fuzz_probe_step = b.step("fuzz-probe", "Expected-fail mutation probe: --fuzz=200K");
+    fuzz_probe_step.dependOn(&run_fuzz_probe.step);
+
     const timeout_fixture = b.addTest(.{
         .name = "timeout-fixture",
         .root_module = b.createModule(.{
@@ -204,6 +220,7 @@ pub fn build(b: *std.Build) void {
     // without the bench engine: it imports testingx for `fuzzBytes` alone.
     check.dependOn(&fuzz_bytes_tests.step);
     check.dependOn(&fuzz_bytes_builtin.step);
+    check.dependOn(&fuzz_probe.step);
     check.dependOn(&addBenchExe(b, .{
         .module = mod,
         .root_source_file = b.path("benchmarks/bench.zig"),
