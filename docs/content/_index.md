@@ -468,9 +468,11 @@ Which runner builds the test binary decides the panic path. `src/runner.zig` dec
 
 Under this runner a panic prints `PANIC in test "<name>": <message>`, writes a stack trace, and exits 1. The run stops at that test: later tests do not start, and no summary line prints.
 
-Under Zig's built-in runner the same panic goes to `std.debug.defaultPanic`, whose last act is `std.process.abort()`. The process dies from SIGABRT and may leave a core file. The message and the trace print first. The test name does not, because the built-in runner has no current test to name.
+Under Zig's built-in runner the same panic goes to `std.debug.defaultPanic`, whose last act is `std.process.abort()`. The test binary dies from SIGABRT and can leave a core file. The message and the trace print first.
 
-These paths run on the built-in runner, and a panic in any of them aborts:
+The built-in runner names the test and continues the run. Under `zig build test` the build runner prints `error: 'root.test.boom' terminated with signal ABRT with stderr:` and the trace below it, then runs the remaining tests. The summary reads `2 pass, 1 crash (3 total)`, and a test declared after the panic still runs. A direct run of the test binary prints `2/3 root.test.boom...` before the trace. The build runner is a separate process, so only the test binary dies.
+
+These paths run on the built-in runner, and a panic in any of them aborts the process:
 
 - Fuzz mode, where `-Dfuzz` passes `null` for `.test_runner`.
 - A standalone executable attached to a test step. The step runs it, and testingx never sees it.
@@ -478,6 +480,6 @@ These paths run on the built-in runner, and a panic in any of them aborts:
 
 A C library in the test binary has its own abort. A libc `assert` or an allocator abort does not consult the Zig panic handler, so it gives SIGABRT under either runner.
 
-A failed write does not abort. A run redirected to `/dev/full` or into a closed pipe discards the ENOSPC or EPIPE error inside `std.debug.print`, and the run still exits 1 with its usual output. The closed pipe loses the output and nothing else.
+A failed write does not abort. A run redirected to `/dev/full` or into a closed pipe discards the ENOSPC or EPIPE error inside `std.debug.print`. The exit code is the one the run would have had: 1 for a panic or a failure, 0 for a pass. The output is lost in both cases. Nothing else changes.
 
 Panics in `build.zig` are not test panics. The build script is a separate process from the test binary, so its panic reaches neither runner.
