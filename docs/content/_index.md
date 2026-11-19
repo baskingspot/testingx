@@ -461,3 +461,25 @@ Zig's compiler fixes what a test runner can do. Tests are `fn () anyerror!void` 
 `testingx.fuzzBytes` is the byte-slice adapter for `std.testing.fuzz`. It fills a stack buffer of `max_len` bytes and passes the filled slice to your function. Pass the context first, then the bound, then the typed callback: `fuzzBytes(context, max_len, testOne, options)`. `max_len` is required and comptime because it sizes that buffer, so pick the bound the target needs. There is no 64 KiB default. A corpus entry holds the bytes your target receives, so `.corpus = &.{"hello"}` replays `hello`. `Smith.slice` reads a length before the bytes, and the adapter writes that frame for you: a seed file never carries a hand-written prefix. An entry longer than `max_len` reaches the target as its first `max_len` bytes. An input the fuzzer saved is the exception: a crash file starts with that length already, so unwrap it before adding it to `.corpus`, or it gets framed twice and the target sees the wrong bytes. Under testingx's runner the helper replays the corpus and one empty input. Under the built-in runner in fuzz mode it mutates.
 
 Watch mode is not a runner feature. `zig build test --watch` is the build system's, and it works with this runner.
+
+## Panics
+
+Which runner builds the test binary decides the panic path. `src/runner.zig` declares a `panic` namespace in the test root, and the compiler uses it in place of the default.
+
+Under this runner a panic prints `PANIC in test "<name>": <message>`, writes a stack trace, and exits 1. The run stops at that test: later tests do not start, and no summary line prints.
+
+Under Zig's built-in runner the same panic goes to `std.debug.defaultPanic`, whose last act is `std.process.abort()`. The test binary dies from SIGABRT and can leave a core file. The message and the trace print first.
+
+The built-in runner names the test and continues the run. Under `zig build test` the build runner prints `error: 'root.test.boom' terminated with signal ABRT with stderr:` and the trace below it, then runs the remaining tests. The summary reads `2 pass, 1 crash (3 total)`, and a test declared after the panic still runs. A direct run of the test binary prints `2/3 root.test.boom...` before the trace. The build runner is a separate process, so only the test binary dies.
+
+These paths run on the built-in runner, and a panic in any of them aborts the process:
+
+- Fuzz mode, where `-Dfuzz` passes `null` for `.test_runner`.
+- A standalone executable attached to a test step. The step runs it, and testingx never sees it.
+- Any test binary that does not install `src/runner.zig`.
+
+A C library in the test binary has its own abort. A libc `assert` or an allocator abort does not consult the Zig panic handler, so it gives SIGABRT under either runner.
+
+A failed write does not abort. A run redirected to `/dev/full` or into a closed pipe discards the ENOSPC or EPIPE error inside `std.debug.print`. The exit code is the one the run would have had: 1 for a panic or a failure, 0 for a pass. The output is lost in both cases. Nothing else changes.
+
+Panics in `build.zig` are not test panics. The build script is a separate process from the test binary, so its panic reaches neither runner.
