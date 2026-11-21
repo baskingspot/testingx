@@ -57,6 +57,47 @@ const perfcounter = @import("perfcounter.zig");
 const symbols = @import("symbols.zig");
 const Timer = @import("timer.zig").Timer;
 
+var current_benchmark: ?[]const u8 = null;
+threadlocal var panicking: bool = false;
+
+/// Panic handler for benchmark executables: print the active benchmark,
+/// dump the stack trace, and exit 1 instead of aborting into a core file.
+/// `src/bench_main.zig` wires this automatically; a custom main can bind
+/// `pub const panic = testingx.benchPanic;`.
+pub const panic = std.debug.FullPanic(panicFn);
+
+fn panicFn(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    @branchHint(.cold);
+    // Exit if the stack trace path itself panics.
+    if (panicking) std.process.exit(1);
+    panicking = true;
+
+    trace: {
+        const stderr = std.debug.lockStderr(&.{}).terminal();
+        defer std.debug.unlockStderr();
+        const writer = stderr.writer;
+
+        if (current_benchmark) |name| {
+            writer.print("PANIC in benchmark \"{s}\": {s}\n", .{ name, msg }) catch break :trace;
+        } else {
+            writer.print("PANIC: {s}\n", .{msg}) catch break :trace;
+        }
+
+        if (@errorReturnTrace()) |t| if (t.index > 0) {
+            writer.writeAll("error return context:\n") catch break :trace;
+            std.debug.writeErrorReturnTrace(t, stderr) catch break :trace;
+            writer.writeAll("\nstack trace:\n") catch break :trace;
+        };
+
+        std.debug.writeCurrentStackTrace(.{
+            .first_address = first_trace_addr orelse @returnAddress(),
+            .allow_unsafe_unwind = true,
+        }, stderr) catch break :trace;
+    }
+
+    std.process.exit(1);
+}
+
 pub const Error = error{
     BenchmarkFailed,
     BenchmarkSkipped,
@@ -1074,6 +1115,10 @@ pub const B = struct {
     }
 
     fn runN(self: *B, n: u64) !void {
+        const prev_benchmark = current_benchmark;
+        current_benchmark = if (self.name.len > 0) self.name else null;
+        defer current_benchmark = prev_benchmark;
+
         self.n = n;
         self.loop_state = .{};
         self.parallelism = @max(self.parallelism, 1);

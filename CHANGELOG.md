@@ -19,6 +19,10 @@ All notable changes to testingx are recorded here. The format follows
 
 ### Fixed
 
+- Benchmarks built with `addBench` and `addBenchExe` install
+  `testingx.benchPanic`. A panic prints `PANIC in benchmark "<name>": <message>`
+  with a stack trace and exits 1, with no `SIGABRT` or core file. A custom
+  benchmark `main` can bind `pub const panic = testingx.benchPanic;`.
 - `--disasm` resolves the symbol in a benchmark executable that links libc.
   `std.debug.getModuleName` reports `MissingDebugInfo` for the main program
   when the loader names it with an empty string, so the lookup now falls back

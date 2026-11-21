@@ -19,6 +19,7 @@ pub const Spec = bench.Spec;
 pub const Function = bench.Function;
 pub const benchmark = bench.benchmark;
 pub const benchMain = bench.benchMain;
+pub const benchPanic = bench.panic;
 
 pub const filter = @import("filter.zig");
 pub const Timer = @import("timer.zig").Timer;

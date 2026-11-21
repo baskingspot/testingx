@@ -7,6 +7,10 @@ pub const BenchOptions = struct {
     /// Extra imports for the suite root and the files it reaches. Bench files
     /// that `@import` the consuming package's module need it here: the suite
     /// module is created for them, not shared with the rest of the build.
+    ///
+    /// Zig keeps each imported module's own optimize mode. Pass a module built
+    /// with `.ReleaseFast` (or `.optimize = null` to inherit), not a `Debug`
+    /// module shared with unit tests.
     imports: []const std.Build.Module.Import = &.{},
     target: ?std.Build.ResolvedTarget = null,
     /// Benchmarks in Debug are noise; the default matches the Go ecosystem's
@@ -189,6 +193,22 @@ pub fn build(b: *std.Build) void {
     panic_check.expectStdErrMatch("PANIC in test \"panic demonstration\": intentional panic");
     panic_check.expectStdErrMatch("tests/panic.zig");
     test_step.dependOn(&panic_check.step);
+
+    const bench_panic_fixture = addBenchExe(b, .{
+        .name = "bench-panic-fixture",
+        .module = mod,
+        .root_source_file = b.path("tests/bench_panic.zig"),
+        .target = target,
+    });
+    const bench_panic_check = addBenchCheck(b, test_step, bench_panic_fixture, 1);
+    bench_panic_check.addArgs(&.{ "--filter=^Panic$", "--no-env" });
+    bench_panic_check.expectStdErrMatch("PANIC in benchmark \"Panic\": intentional panic");
+    bench_panic_check.expectStdErrMatch("tests/bench_panic.zig");
+
+    const bench_sub_panic_check = addBenchCheck(b, test_step, bench_panic_fixture, 1);
+    bench_sub_panic_check.addArgs(&.{ "--filter=^Sub/Child$", "--no-env" });
+    bench_sub_panic_check.expectStdErrMatch("PANIC in benchmark \"Sub/Child\": sub panic");
+    bench_sub_panic_check.expectStdErrMatch("tests/bench_panic.zig");
 
     // Self-host: benchmark the library with itself, ReleaseFast.
     const run_bench = addBench(b, .{
@@ -466,5 +486,23 @@ fn addRunnerCheck(
 ) *std.Build.Step.Run {
     const run = addRunnerRun(b, parent, tests, exit_code);
     run.expectStdOutEqual("");
+    return run;
+}
+
+fn addBenchCheck(
+    b: *std.Build,
+    parent: *std.Build.Step,
+    bench_exe: *std.Build.Step.Compile,
+    exit_code: u8,
+) *std.Build.Step.Run {
+    const run = b.addRunArtifact(bench_exe);
+    run.has_side_effects = true;
+    for ([_][]const u8{
+        "TESTINGX_BENCH_FILTER",
+        "TESTINGX_BENCH_JSONL",
+        "TESTINGX_BENCH_CYCLES",
+    }) |key| run.removeEnvironmentVariable(key);
+    run.expectExitCode(exit_code);
+    parent.dependOn(&run.step);
     return run;
 }

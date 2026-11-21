@@ -6,6 +6,8 @@ const std = @import("std");
 const testingx = @import("testingx");
 const root = @import("bench_root");
 
+pub const panic = testingx.benchPanic;
+
 pub fn main(init: std.process.Init) !u8 {
     return testingx.benchMain(root, init);
 }
