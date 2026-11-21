@@ -5,6 +5,8 @@ All notable changes to testingx are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-21
+
 ### Added
 
 - `testingx.fuzzBytes` adapts `std.testing.fuzz` to a byte-slice target:
