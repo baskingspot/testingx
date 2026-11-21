@@ -47,6 +47,8 @@ Change these only together with the fixture checks in `build.zig`, which assert 
 - Environment variables set a default and flags win: `TESTINGX_FORMAT`, `TESTINGX_FILTER`, `TESTINGX_TIMEOUT`, `TESTINGX_FAIL_FAST`, `TESTINGX_ALLOW_EMPTY_FILTER`, `NO_COLOR`, plus `TESTINGX_BENCH_FILTER` and `TESTINGX_BENCH_JSONL` for benchmarks. The fixture checks strip them from the ambient environment.
 - The docs build is part of `just ci` and fails on an unlabeled code fence.
 - `@embedFile` resolves a path against the file that contains the builtin, not the caller of an inline function. The fixture helpers take embedded bytes for that reason; do not add a path-taking wrapper that calls `@embedFile` from this repo.
+- In Zig 0.17.1, `zig build ... --fuzz=N` exits 0 even after a target error or crash during fuzzing (#9). Use `just fuzz` (which wraps the run in `fuzz-run` and checks the output) instead of trusting the raw exit code.
+- In Zig 0.17.1, every test in a `--fuzz` artifact root must call `std.testing.fuzz`. A test that returns `error.SkipZigTest` before `std.testing.fuzz` stalls the fuzzer indefinitely with no output (#11). Keep one fuzz test per fuzz artifact root and guard replay-only checks inside the callback behind `!builtin.fuzz`.
 
 ## Docs
 

@@ -10,22 +10,49 @@ default:
 test:
     zig build test --summary all
 
-[doc("Fuzz fuzzBytes with the built-in runner, for example `just fuzz 100K`. A budget is required: without one the build runner waits")]
-[group("test")]
-fuzz LIMIT="10M":
-    zig build fuzz --fuzz={{ LIMIT }}
+# Run a fuzz step under a wall-clock timeout and fail when Zig 0.17.1 swallows
+# a fuzzing error or crash into exit 0 (#9, #11).
+[private]
+fuzz-run STEP LIMIT TIMEOUT:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    log=$(mktemp)
+    trap 'rm -f "${log}"' EXIT
+    timeout --kill-after=5s "{{ TIMEOUT }}" zig build "{{ STEP }}" --fuzz="{{ LIMIT }}" 2>&1 | tee "${log}"
+    status=${PIPESTATUS[0]}
+    if [[ ${status} -eq 124 ]]; then
+        echo "fuzz-run: timed out after {{ TIMEOUT }} (a test may have returned before std.testing.fuzz)" >&2
+        exit 124
+    fi
+    if [[ ${status} -ne 0 ]]; then
+        exit "${status}"
+    fi
+    if grep -Eq 'failed with error\.|terminated with signal|input saved to ' "${log}"; then
+        echo "fuzz-run: fuzzer reported a failure (zig build exited 0)" >&2
+        exit 1
+    fi
+    if ! grep -q '======= FUZZING REPORT =======' "${log}"; then
+        echo "fuzz-run: missing fuzzing report" >&2
+        exit 1
+    fi
 
-[doc("Expected-fail mutation probe: passes when the fuzzer dies with error.CorpusDidNotContainThisInput. Not part of ci")]
+[doc("Fuzz fuzzBytes with the built-in runner, for example `just fuzz 100K`. Fails on fuzzer errors or timeout (#9, #11)")]
+[group("test")]
+fuzz LIMIT="10M" TIMEOUT="5m":
+    just fuzz-run fuzz "{{ LIMIT }}" "{{ TIMEOUT }}"
+
+[doc("Expected-fail mutation probe: passes when fuzz-run exits nonzero on error.CorpusDidNotContainThisInput. Not part of ci")]
 [group("test")]
 fuzz-probe:
     #!/usr/bin/env bash
     set -uo pipefail
-    output=$(zig build fuzz-probe --fuzz=200K 2>&1)
+    output=$(just fuzz-run fuzz-probe 200K 2m 2>&1)
+    status=$?
     printf '%s\n' "$output"
-    if printf '%s' "$output" | grep -q "failed with error.CorpusDidNotContainThisInput"; then
-        echo "fuzz-probe: expected mutation failure observed"
+    if [[ ${status} -ne 0 ]] && printf '%s' "$output" | grep -q "failed with error.CorpusDidNotContainThisInput"; then
+        echo "fuzz-probe: expected mutation failure caught (exit ${status})"
     else
-        echo "fuzz-probe: expected mutation failure did not happen" >&2
+        echo "fuzz-probe: expected nonzero exit with error.CorpusDidNotContainThisInput (got exit ${status})" >&2
         exit 1
     fi
 
